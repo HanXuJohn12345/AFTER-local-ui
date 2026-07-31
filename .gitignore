@@ -175,3 +175,13 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+# Local UI scratch files
+_cuda_*.py
+_print_*.py
+_ui_gpu_smoke*.py
+after_local_ui.pid
+after_local_ui*.log
+after_local_ui_server*.log
+backups/
+pretrained/ui_outputs/
+pretrained/logs/
