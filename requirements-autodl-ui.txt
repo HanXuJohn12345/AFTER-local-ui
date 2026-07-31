@@ -1,0 +1,3 @@
+# AutoDL UI runtime only.
+# Pick an AutoDL image that already includes CUDA-enabled torch + torchaudio.
+numpy==1.26.4
