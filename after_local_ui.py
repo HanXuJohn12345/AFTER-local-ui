@@ -24,6 +24,7 @@ MAP_PATH = PRETRAINED / "afterv2.audio.instr.png"
 OUTPUT_DIR = PRETRAINED / "ui_outputs"
 SAMPLE_RATE = 44100
 CHUNK_SIZE = 4096
+BUFFER_SIZES = (2048, 4096, 8192)
 MAX_SECONDS = 12
 DEFAULT_DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 torch.set_grad_enabled(False)
@@ -194,6 +195,35 @@ INDEX_HTML = r"""<!doctype html>
       grid-template-columns: 1fr;
       gap: 2px;
     }
+    .map-wrap {
+      margin-top: 12px;
+    }
+    .xy-readout {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 8px 0 12px;
+    }
+    .xy-readout div {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 8px;
+      color: var(--muted);
+      background: #131619;
+    }
+    .xy-readout strong {
+      color: var(--text);
+      float: right;
+    }
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #20252a;
+      color: var(--text);
+      min-height: 38px;
+      padding: 8px 10px;
+    }
     button {
       border: 1px solid var(--line);
       background: #20252a;
@@ -281,20 +311,36 @@ INDEX_HTML = r"""<!doctype html>
 
     <div class="grid">
       <section>
-        <h2>Timbre Dimensions</h2>
+        <h2>Timbre Map + 6D</h2>
         <div class="readout">
-          <div class="metric"><span>Mode</span><strong>6D latent</strong></div>
-          <div class="metric"><span>Range</span><strong>-2.00 to 2.00</strong></div>
-          <div class="metric"><span>Chunk</span><strong>4096</strong></div>
+          <div class="metric"><span>Mode</span><strong>2D map + 6D</strong></div>
+          <div class="metric"><span>Range</span><strong>-4.00 to 4.00</strong></div>
+          <div class="metric"><span>Buffer</span><strong id="bufferReadout">4096</strong></div>
+        </div>
+        <div id="mapWrap" class="map-wrap" title="Drag to convert XY map position into 6D timbre latent values.">
+          <img id="map" src="/map.png" alt="Timbre map" />
+          <div id="dot"></div>
+        </div>
+        <div class="xy-readout">
+          <div>X <strong id="mapXValue">0.00</strong></div>
+          <div>Y <strong id="mapYValue">0.00</strong></div>
         </div>
         <div class="dim-grid">
-          <label>Timbre Dim 1 <strong id="timbreValue0">0.00</strong><input class="timbre-slider" data-index="0" type="range" min="-2" max="2" step="0.01" value="0" /></label>
-          <label>Timbre Dim 2 <strong id="timbreValue1">0.00</strong><input class="timbre-slider" data-index="1" type="range" min="-2" max="2" step="0.01" value="0" /></label>
-          <label>Timbre Dim 3 <strong id="timbreValue2">0.00</strong><input class="timbre-slider" data-index="2" type="range" min="-2" max="2" step="0.01" value="0" /></label>
-          <label>Timbre Dim 4 <strong id="timbreValue3">0.00</strong><input class="timbre-slider" data-index="3" type="range" min="-2" max="2" step="0.01" value="0" /></label>
-          <label>Timbre Dim 5 <strong id="timbreValue4">0.00</strong><input class="timbre-slider" data-index="4" type="range" min="-2" max="2" step="0.01" value="0" /></label>
-          <label>Timbre Dim 6 <strong id="timbreValue5">0.00</strong><input class="timbre-slider" data-index="5" type="range" min="-2" max="2" step="0.01" value="0" /></label>
+          <label>Timbre Dim 1 <strong id="timbreValue0">0.00</strong><input class="timbre-slider" data-index="0" type="range" min="-4" max="4" step="0.01" value="0" /></label>
+          <label>Timbre Dim 2 <strong id="timbreValue1">0.00</strong><input class="timbre-slider" data-index="1" type="range" min="-4" max="4" step="0.01" value="0" /></label>
+          <label>Timbre Dim 3 <strong id="timbreValue2">0.00</strong><input class="timbre-slider" data-index="2" type="range" min="-4" max="4" step="0.01" value="0" /></label>
+          <label>Timbre Dim 4 <strong id="timbreValue3">0.00</strong><input class="timbre-slider" data-index="3" type="range" min="-4" max="4" step="0.01" value="0" /></label>
+          <label>Timbre Dim 5 <strong id="timbreValue4">0.00</strong><input class="timbre-slider" data-index="4" type="range" min="-4" max="4" step="0.01" value="0" /></label>
+          <label>Timbre Dim 6 <strong id="timbreValue5">0.00</strong><input class="timbre-slider" data-index="5" type="range" min="-4" max="4" step="0.01" value="0" /></label>
         </div>
+        <label>
+          Buffer Size <strong id="bufferValue">4096</strong>
+          <select id="bufferSize">
+            <option value="2048">2048 - lower latency</option>
+            <option value="4096" selected>4096 - balanced</option>
+            <option value="8192">8192 - steadier</option>
+          </select>
+        </label>
         <label>
           nb_steps <strong id="stepsValue">1</strong>
           <input id="steps" type="range" min="1" max="6" step="1" value="1" />
@@ -400,6 +446,13 @@ INDEX_HTML = r"""<!doctype html>
   <script>
     const timbreSliders = Array.from(document.querySelectorAll(".timbre-slider"));
     const timbreValueEls = timbreSliders.map((_, index) => document.getElementById(`timbreValue${index}`));
+    const mapWrap = document.getElementById("mapWrap");
+    const dot = document.getElementById("dot");
+    const mapXValue = document.getElementById("mapXValue");
+    const mapYValue = document.getElementById("mapYValue");
+    const bufferSize = document.getElementById("bufferSize");
+    const bufferValue = document.getElementById("bufferValue");
+    const bufferReadout = document.getElementById("bufferReadout");
     const steps = document.getElementById("steps");
     const guidance = document.getElementById("guidance");
     const inputGain = document.getElementById("inputGain");
@@ -468,6 +521,8 @@ INDEX_HTML = r"""<!doctype html>
     let activePreset = 0;
     let timbrePresets = JSON.parse(localStorage.getItem("afterTimbrePresets6D") || localStorage.getItem("afterTimbrePresets") || "[null,null,null,null]");
     let lastMorphFrame = performance.now();
+    let mapPointerActive = false;
+    let mapRequestId = 0;
 
     function setStatus(text, mode) {
       statusBox.textContent = text;
@@ -480,6 +535,7 @@ INDEX_HTML = r"""<!doctype html>
       stopBtn.disabled = !recording;
       liveStartBtn.disabled = liveMode || recording;
       liveStopBtn.disabled = !liveMode;
+      bufferSize.disabled = liveMode || recording;
     }
 
     function updateTimer() {
@@ -490,7 +546,47 @@ INDEX_HTML = r"""<!doctype html>
     }
 
     function clampTimbreValue(value) {
-      return Math.min(Math.max(Number(value) || 0, -2), 2);
+      return Math.min(Math.max(Number(value) || 0, -4), 4);
+    }
+
+    function clampMapValue(value) {
+      return Math.min(Math.max(Number(value) || 0, -1), 1);
+    }
+
+    function setMapDot(x, y) {
+      const cx = clampMapValue(x);
+      const cy = clampMapValue(y);
+      dot.style.left = `${((cx + 1) / 2) * 100}%`;
+      dot.style.top = `${((1 - cy) / 2) * 100}%`;
+      mapXValue.textContent = cx.toFixed(2);
+      mapYValue.textContent = cy.toFixed(2);
+    }
+
+    function mapEventToCoords(event) {
+      const rect = mapWrap.getBoundingClientRect();
+      const px = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1);
+      const py = Math.min(Math.max((event.clientY - rect.top) / rect.height, 0), 1);
+      return { x: px * 2 - 1, y: 1 - py * 2 };
+    }
+
+    async function requestMapLatent(x, y) {
+      const requestId = ++mapRequestId;
+      setMapDot(x, y);
+      try {
+        const query = new URLSearchParams({ x: x.toFixed(4), y: y.toFixed(4) });
+        const response = await fetch(`/api/map2latent?${query.toString()}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Map conversion failed.");
+        if (requestId !== mapRequestId) return;
+        setTimbreTargetAll(data.zt || [], false);
+      } catch (err) {
+        setStatus(err.message, "err");
+      }
+    }
+
+    function updateBufferUi() {
+      bufferValue.textContent = bufferSize.value;
+      bufferReadout.textContent = bufferSize.value;
     }
 
     function setTimbreTarget(index, value, instant = false) {
@@ -567,7 +663,32 @@ INDEX_HTML = r"""<!doctype html>
     timbreSliders.forEach((slider, index) => {
       slider.addEventListener("input", () => setTimbreTarget(index, slider.value));
     });
+    mapWrap.addEventListener("pointerdown", (event) => {
+      mapPointerActive = true;
+      dot.classList.add("dragging");
+      mapWrap.setPointerCapture(event.pointerId);
+      const coords = mapEventToCoords(event);
+      requestMapLatent(coords.x, coords.y);
+    });
+    mapWrap.addEventListener("pointermove", (event) => {
+      if (!mapPointerActive) return;
+      const coords = mapEventToCoords(event);
+      requestMapLatent(coords.x, coords.y);
+    });
+    mapWrap.addEventListener("pointerup", (event) => {
+      mapPointerActive = false;
+      dot.classList.remove("dragging");
+      withSuppress(() => mapWrap.releasePointerCapture(event.pointerId));
+    });
+    mapWrap.addEventListener("pointercancel", () => {
+      mapPointerActive = false;
+      dot.classList.remove("dragging");
+    });
+    function withSuppress(fn) { try { fn(); } catch (_) {} }
+    setMapDot(0, 0);
     setTimbreTargetAll(targetTimbreValues, true);
+    updateBufferUi();
+    bufferSize.addEventListener("change", updateBufferUi);
     steps.addEventListener("input", () => setStepsValue(steps.value));
     guidance.addEventListener("input", () => guidanceValue.textContent = Number(guidance.value).toFixed(2));
     inputGain.addEventListener("input", () => gainValue.textContent = `${Number(inputGain.value)} dB`);
@@ -690,6 +811,7 @@ INDEX_HTML = r"""<!doctype html>
         zt: currentTimbreString(),
         nb_steps: steps.value,
         guidance_structure: guidance.value,
+        buffer_size: bufferSize.value,
         input_gain_db: inputGain.value,
         wet_mix: wetMix.value,
         spring_mix: springMix.value,
@@ -698,6 +820,7 @@ INDEX_HTML = r"""<!doctype html>
         delay_mix: delayMix.value,
         delay_time_ms: delayTime.value,
         delay_feedback: delayFeedback.value,
+        buffer_size: bufferSize.value,
         sr: liveContext.sampleRate.toString()
       });
       try {
@@ -740,7 +863,8 @@ INDEX_HTML = r"""<!doctype html>
       await liveContext.resume();
       const resetQuery = new URLSearchParams({
         nb_steps: steps.value,
-        guidance_structure: guidance.value
+        guidance_structure: guidance.value,
+        buffer_size: bufferSize.value
       });
       const reset = await fetch(`/api/live_reset?${resetQuery.toString()}`, { method: "POST" });
       const resetData = await reset.json().catch(() => ({}));
@@ -748,7 +872,7 @@ INDEX_HTML = r"""<!doctype html>
       liveDevice = resetData.device_name ? `${resetData.device} / ${resetData.device_name}` : (resetData.device || "unknown");
 
       const source = liveContext.createMediaStreamSource(liveStream);
-      liveProcessor = liveContext.createScriptProcessor(4096, 1, 1);
+      liveProcessor = liveContext.createScriptProcessor(Number(bufferSize.value), 1, 1);
       const mute = liveContext.createGain();
       mute.gain.value = 0;
       liveQueue = [];
@@ -770,7 +894,7 @@ INDEX_HTML = r"""<!doctype html>
       source.connect(liveProcessor);
       liveProcessor.connect(mute);
       mute.connect(liveContext.destination);
-      setStatus(`Live running on ${liveDevice}. Move timbre dimension faders to affect upcoming chunks.`, "busy");
+      setStatus(`Live running on ${liveDevice}. Drag the map for coarse timbre or adjust 6D controls for fine changes.`, "busy");
       updateControls();
     }
 
@@ -834,6 +958,7 @@ INDEX_HTML = r"""<!doctype html>
       form.append("delay_mix", delayMix.value);
       form.append("delay_time_ms", delayTime.value);
       form.append("delay_feedback", delayFeedback.value);
+      form.append("buffer_size", bufferSize.value);
       runBtn.disabled = true;
       setStatus("Running AFTER inference. Short takes are friendlier for this exported model.", "busy");
       const started = performance.now();
@@ -1059,6 +1184,14 @@ def _clamp_float(value, lo: float, hi: float):
     return max(lo, min(hi, float(value)))
 
 
+def _parse_buffer_size(raw, default: int = CHUNK_SIZE):
+    try:
+        value = int(float(raw))
+    except (TypeError, ValueError):
+        return default
+    return value if value in BUFFER_SIZES else default
+
+
 def _make_fx_state(sample_rate: int):
     comb_ms = [21.0, 31.0, 43.0, 59.0, 73.0, 89.0, 109.0, 137.0]
     return {
@@ -1172,6 +1305,15 @@ def _parse_timbre_values(raw):
     return (values + [0.0] * 6)[:6]
 
 
+def _map_to_timbre_values(x_value: float, y_value: float):
+    device = DEFAULT_DEVICE
+    with _infer_lock, torch.inference_mode():
+        model = _load_script_model(device)
+        coords = torch.tensor([[[float(x_value)], [float(y_value)]]], dtype=torch.float32, device=device)
+        zt = model.map2latent(coords).detach().cpu().reshape(1, -1)[0]
+    return [_clamp_float(float(value), -4.0, 4.0) for value in zt[:6]]
+
+
 def _timbre_tensor(model, timbre_values, device: str, frames=None):
     channels = int(model.zt_channels)
     values = (_parse_timbre_values(timbre_values) + [0.0] * channels)[:channels]
@@ -1202,7 +1344,7 @@ def _generate_timbre(model, waveform, timbre_values, nb_steps: int, guidance: fl
     return model.generate_timbre(torch.cat([audio, latent], dim=1)).cpu().squeeze(0)
 
 
-def _run_after(input_path: Path, timbre_values, nb_steps: int, guidance: float, input_gain_db: float = 0.0, wet_mix: float = 1.0, spring_mix: float = 0.0, spring_decay: float = 0.7, reverb_boost: float = 1.0, delay_mix: float = 0.0, delay_time_ms: float = 320.0, delay_feedback: float = 0.35):
+def _run_after(input_path: Path, timbre_values, nb_steps: int, guidance: float, input_gain_db: float = 0.0, wet_mix: float = 1.0, spring_mix: float = 0.0, spring_decay: float = 0.7, reverb_boost: float = 1.0, delay_mix: float = 0.0, delay_time_ms: float = 320.0, delay_feedback: float = 0.35, buffer_size: int = CHUNK_SIZE):
     if not MODEL_PATH.exists():
         raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
 
@@ -1215,11 +1357,12 @@ def _run_after(input_path: Path, timbre_values, nb_steps: int, guidance: float, 
     with _infer_lock, torch.inference_mode():
         model = _load_script_model(device)
         chunks = []
-        for start in range(0, source_len, CHUNK_SIZE):
-            chunk = waveform[:, start:start + CHUNK_SIZE]
+        buffer_size = _parse_buffer_size(buffer_size)
+        for start in range(0, source_len, buffer_size):
+            chunk = waveform[:, start:start + buffer_size]
             valid = chunk.shape[-1]
-            if valid < CHUNK_SIZE:
-                chunk = F.pad(chunk, (0, CHUNK_SIZE - valid))
+            if valid < buffer_size:
+                chunk = F.pad(chunk, (0, buffer_size - valid))
             dry = chunk.clone()
             model_chunk = (chunk * _db_to_gain(input_gain_db)).clamp(-1.0, 1.0)
             generated = _generate_timbre(model, model_chunk, timbre_values, nb_steps, guidance, device)
@@ -1235,7 +1378,7 @@ def _run_after(input_path: Path, timbre_values, nb_steps: int, guidance: float, 
     torchaudio.save(str(out_path), output, SAMPLE_RATE)
     return out_name, source_len / SAMPLE_RATE, len(chunks), _device_info(device)
 
-def _reset_live_model(nb_steps: int = 1, guidance: float = 1.0):
+def _reset_live_model(nb_steps: int = 1, guidance: float = 1.0, buffer_size: int = CHUNK_SIZE):
     global _live_model, _live_device, _live_fx_state
     if not MODEL_PATH.exists():
         raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
@@ -1244,7 +1387,8 @@ def _reset_live_model(nb_steps: int = 1, guidance: float = 1.0):
     with _infer_lock, torch.inference_mode():
         _live_device = device
         _live_model = _load_script_model(device)
-        dummy_audio = torch.zeros(1, CHUNK_SIZE)
+        buffer_size = _parse_buffer_size(buffer_size)
+        dummy_audio = torch.zeros(1, buffer_size)
         _generate_timbre(_live_model, dummy_audio, [0.0] * 6, nb_steps, guidance, device)
         _generate_timbre(_live_model, dummy_audio, [0.0] * 6, nb_steps, guidance, device)
         _live_fx_state = _make_fx_state(SAMPLE_RATE)
@@ -1261,7 +1405,7 @@ def _get_live_model_locked():
     return _live_model
 
 
-def _process_live_chunk(raw: bytes, sr: int, timbre_values, nb_steps: int, guidance: float, input_gain_db: float = 0.0, wet_mix: float = 1.0, spring_mix: float = 0.0, spring_decay: float = 0.7, reverb_boost: float = 1.0, delay_mix: float = 0.0, delay_time_ms: float = 320.0, delay_feedback: float = 0.35):
+def _process_live_chunk(raw: bytes, sr: int, timbre_values, nb_steps: int, guidance: float, input_gain_db: float = 0.0, wet_mix: float = 1.0, spring_mix: float = 0.0, spring_decay: float = 0.7, reverb_boost: float = 1.0, delay_mix: float = 0.0, delay_time_ms: float = 320.0, delay_feedback: float = 0.35, buffer_size: int = CHUNK_SIZE):
     if not raw:
         raise ValueError("Empty live audio chunk.")
     samples = np.frombuffer(raw, dtype="<f4").astype(np.float32, copy=True)
@@ -1271,9 +1415,10 @@ def _process_live_chunk(raw: bytes, sr: int, timbre_values, nb_steps: int, guida
     waveform = torch.from_numpy(samples).unsqueeze(0).float().clamp(-1.0, 1.0)
     if sr != SAMPLE_RATE:
         waveform = torchaudio.functional.resample(waveform, sr, SAMPLE_RATE)
-    if waveform.shape[-1] < CHUNK_SIZE:
-        waveform = F.pad(waveform, (0, CHUNK_SIZE - waveform.shape[-1]))
-    waveform = waveform[:, :CHUNK_SIZE]
+    buffer_size = _parse_buffer_size(buffer_size)
+    if waveform.shape[-1] < buffer_size:
+        waveform = F.pad(waveform, (0, buffer_size - waveform.shape[-1]))
+    waveform = waveform[:, :buffer_size]
 
     dry = waveform.clone().squeeze(0)
     model_waveform = (waveform * _db_to_gain(input_gain_db)).clamp(-1.0, 1.0)
@@ -1308,8 +1453,15 @@ class Handler(BaseHTTPRequestHandler):
             name = Path(path.split("/outputs/", 1)[1]).name
             _serve_file(self, OUTPUT_DIR / name, "audio/wav")
             return
+        if path == "/api/map2latent":
+            params = parse_qs(urlparse(self.path).query)
+            x_value = _clamp_float(params.get("x", ["0"])[0], -1.0, 1.0)
+            y_value = _clamp_float(params.get("y", ["0"])[0], -1.0, 1.0)
+            values = _map_to_timbre_values(x_value, y_value)
+            _json(self, 200, {"x": x_value, "y": y_value, "zt": values})
+            return
         if path == "/health":
-            _json(self, 200, {"ok": True, "model": str(MODEL_PATH), "model_exists": MODEL_PATH.exists(), **_device_info(DEFAULT_DEVICE)})
+            _json(self, 200, {"ok": True, "model": str(MODEL_PATH), "model_exists": MODEL_PATH.exists(), "buffer_sizes": BUFFER_SIZES, **_device_info(DEFAULT_DEVICE)})
             return
         self.send_error(404)
 
@@ -1322,7 +1474,8 @@ class Handler(BaseHTTPRequestHandler):
                 params = parse_qs(parsed.query)
                 nb_steps = max(1, min(6, int(params.get("nb_steps", ["1"])[0])))
                 guidance = max(0.0, min(2.0, float(params.get("guidance_structure", ["1"])[0])))
-                device_info = _reset_live_model(nb_steps, guidance)
+                buffer_size = _parse_buffer_size(params.get("buffer_size", [str(CHUNK_SIZE)])[0])
+                device_info = _reset_live_model(nb_steps, guidance, buffer_size)
                 _json(self, 200, {"ok": True, "elapsed_seconds": time.perf_counter() - started, **device_info})
                 return
 
@@ -1342,7 +1495,8 @@ class Handler(BaseHTTPRequestHandler):
                 delay_mix = max(0.0, min(1.0, float(params.get("delay_mix", ["0"])[0])))
                 delay_time_ms = max(1.0, min(2000.0, float(params.get("delay_time_ms", ["320"])[0])))
                 delay_feedback = max(0.0, min(0.95, float(params.get("delay_feedback", ["0.35"])[0])))
-                body, sample_count, device_info = _process_live_chunk(raw, sr, timbre_values, nb_steps, guidance, input_gain_db, wet_mix, spring_mix, spring_decay, reverb_boost, delay_mix, delay_time_ms, delay_feedback)
+                buffer_size = _parse_buffer_size(params.get("buffer_size", [str(CHUNK_SIZE)])[0])
+                body, sample_count, device_info = _process_live_chunk(raw, sr, timbre_values, nb_steps, guidance, input_gain_db, wet_mix, spring_mix, spring_decay, reverb_boost, delay_mix, delay_time_ms, delay_feedback, buffer_size)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(len(body)))
@@ -1392,7 +1546,8 @@ class Handler(BaseHTTPRequestHandler):
                 delay_mix = max(0.0, min(1.0, float(form.getfirst("delay_mix", "0"))))
                 delay_time_ms = max(1.0, min(2000.0, float(form.getfirst("delay_time_ms", "320"))))
                 delay_feedback = max(0.0, min(0.95, float(form.getfirst("delay_feedback", "0.35"))))
-                out_name, seconds, chunk_count, device_info = _run_after(tmp_path, timbre_values, nb_steps, guidance, input_gain_db, wet_mix, spring_mix, spring_decay, reverb_boost, delay_mix, delay_time_ms, delay_feedback)
+                buffer_size = _parse_buffer_size(form.getfirst("buffer_size", str(CHUNK_SIZE)))
+                out_name, seconds, chunk_count, device_info = _run_after(tmp_path, timbre_values, nb_steps, guidance, input_gain_db, wet_mix, spring_mix, spring_decay, reverb_boost, delay_mix, delay_time_ms, delay_feedback, buffer_size)
             finally:
                 with contextlib.suppress(FileNotFoundError):
                     tmp_path.unlink()

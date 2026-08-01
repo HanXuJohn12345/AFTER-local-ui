@@ -21,31 +21,33 @@ def main():
     parser.add_argument("--steps", default="1,2,4,6", help="Comma-separated nb_steps values to test.")
     parser.add_argument("--chunks", type=int, default=8, help="Measured chunks per nb_steps value.")
     parser.add_argument("--guidance", type=float, default=1.0)
+    parser.add_argument("--buffer-size", type=int, default=ui.CHUNK_SIZE, choices=ui.BUFFER_SIZES)
     args = parser.parse_args()
 
     steps_list = [max(1, min(6, int(part.strip()))) for part in args.steps.split(",") if part.strip()]
-    audio_ms = ui.CHUNK_SIZE / ui.SAMPLE_RATE * 1000.0
+    buffer_size = ui._parse_buffer_size(args.buffer_size)
+    audio_ms = buffer_size / ui.SAMPLE_RATE * 1000.0
     rng = np.random.default_rng(1234)
-    samples = (rng.standard_normal(ui.CHUNK_SIZE).astype("<f4") * 0.02)
+    samples = (rng.standard_normal(buffer_size).astype("<f4") * 0.02)
     raw = samples.tobytes()
 
     print(f"device: {ui.DEFAULT_DEVICE}")
     if torch.cuda.is_available():
         print(f"gpu: {torch.cuda.get_device_name(0)}")
-    print(f"chunk: {ui.CHUNK_SIZE} samples = {audio_ms:.2f} ms audio")
-    print("real-time target: p95 below chunk audio ms")
+    print(f"buffer: {buffer_size} samples = {audio_ms:.2f} ms audio")
+    print("real-time target: p95 below buffer audio ms")
 
     for steps in steps_list:
-        ui._reset_live_model(steps, args.guidance)
+        ui._reset_live_model(steps, args.guidance, buffer_size)
         # One extra warmup after reset so the measured loop is steadier.
-        ui._process_live_chunk(raw, ui.SAMPLE_RATE, [0.0] * 6, steps, args.guidance, 0.0, 1.0, 0.0, 0.85, 1.0, 0.0, 320.0, 0.35)
+        ui._process_live_chunk(raw, ui.SAMPLE_RATE, [0.0] * 6, steps, args.guidance, 0.0, 1.0, 0.0, 0.85, 1.0, 0.0, 320.0, 0.35, buffer_size)
         if torch.cuda.is_available():
             torch.cuda.synchronize()
 
         times = []
         for _ in range(args.chunks):
             start = time.perf_counter()
-            ui._process_live_chunk(raw, ui.SAMPLE_RATE, [0.0] * 6, steps, args.guidance, 0.0, 1.0, 0.0, 0.85, 1.0, 0.0, 320.0, 0.35)
+            ui._process_live_chunk(raw, ui.SAMPLE_RATE, [0.0] * 6, steps, args.guidance, 0.0, 1.0, 0.0, 0.85, 1.0, 0.0, 320.0, 0.35, buffer_size)
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             times.append((time.perf_counter() - start) * 1000.0)

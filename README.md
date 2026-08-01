@@ -8,9 +8,9 @@ AFTER is a diffusion-based audio-to-audio transfer model. This UI keeps the expo
 
 - Browser UI: record microphone audio, upload audio, run offline inference, or use live microphone streaming.
 - GPU support: uses CUDA automatically when PyTorch sees a GPU.
-- 6D timbre latent controls: six direct latent sliders instead of the original 2D map.
+- Timbre controls: original 2D XY map for coarse control plus six 6D latent sliders for fine control.
 - Performance controls: `nb_steps`, `guidance_structure`, `Live Quality`.
-- Performance/playability controls: `Input Gain`, `Wet / Dry`, `Morph Speed`, `Timbre Presets`.
+- Performance/playability controls: `Buffer Size`, `Input Gain`, `Wet / Dry`, `Morph Speed`, `Timbre Presets`.
 - Post-processing panel: Spring Reverb, Reverb Boost, Delay.
 - AutoDL deployment scripts: run the same UI on an AutoDL GPU instance.
 
@@ -32,7 +32,7 @@ pretrained/afterv2.audio.instr.data337-342.range
 pretrained/afterv2.audio.instr.png
 ```
 
-The `.png` is optional for the current 6D slider UI, but keeping it is useful for compatibility and reference.
+The `.png` is used by the restored 2D timbre map UI.
 
 ## Option 1: Local Windows Deployment
 
@@ -156,10 +156,10 @@ More detail: [AUTODL_DEPLOY.md](AUTODL_DEPLOY.md)
 After deployment, run:
 
 ```bash
-python benchmark_live_autodl.py --steps 1,2,4,6 --chunks 8
+python benchmark_live_autodl.py --steps 1,2,4,6 --buffer-size 4096 --chunks 8
 ```
 
-The live chunk is `4096` samples at `44100 Hz`, about `92.9 ms` of audio. For real-time performance, the benchmark `p95` latency should stay below `92.9 ms`.
+The default live buffer is `4096` samples at `44100 Hz`, about `92.9 ms` of audio. For real-time performance, benchmark `p95` latency should stay below the audio duration of the selected buffer: `2048` = about `46.4 ms`, `4096` = about `92.9 ms`, `8192` = about `185.8 ms`.
 
 Rough guidance:
 

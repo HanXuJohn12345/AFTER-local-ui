@@ -4,9 +4,9 @@
 
 - 麦克风录音或上传音频
 - 实时 `Start Live`
-- 6 维 timbre latent 滑块
+- 原版 2D timbre XY map + 6 维 timbre latent 微调滑块
 - Input Gain / Wet Dry / Morph Speed / Live Quality
-- Timbre Presets
+- Buffer Size / Timbre Presets
 - 后处理：Spring Reverb、Reverb Boost、Delay
 
 ## 目录要求

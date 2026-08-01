@@ -133,14 +133,14 @@ curl http://127.0.0.1:6006/health
 部署后先跑：
 
 ```bash
-python benchmark_live_autodl.py --steps 1,2,4,6 --chunks 8
+python benchmark_live_autodl.py --steps 1,2,4,6 --buffer-size 4096 --chunks 8
 ```
 
-它会输出每个 `nb_steps` 的平均耗时和 p95 耗时。当前 live chunk 是 4096 samples，44.1kHz 下约等于 92.9 ms 音频。判断标准：
+它会输出每个 `nb_steps` 的平均耗时和 p95 耗时。UI 里可以选择 `2048 / 4096 / 8192` buffer；44.1kHz 下分别约等于 `46.4 ms / 92.9 ms / 185.8 ms` 音频。判断标准：
 
-- p95 < 92.9 ms：基本能实时不堆积
-- p95 接近 92.9 ms：能跑但容易因为浏览器/网络/系统抖动卡
-- p95 > 92.9 ms：会逐渐堆积延迟，也就是听感上“卡”或越来越慢
+- p95 低于所选 buffer 的音频时长：基本能实时不堆积
+- p95 接近所选 buffer 的音频时长：能跑但容易因为浏览器/网络/系统抖动卡
+- p95 高于所选 buffer 的音频时长：会逐渐堆积延迟，也就是听感上“卡”或越来越慢
 
 ## nb_steps 算力建议
 
@@ -153,4 +153,4 @@ python benchmark_live_autodl.py --steps 1,2,4,6 --chunks 8
 - A40 / L40 / L40S：更适合长时间服务，nb_steps=2/4 更稳，nb_steps=6 仍需 benchmark
 - A100 / H100 / H800：更适合追求 nb_steps=6 还想低延迟的场景
 
-如果目标是“nb_steps 拉满 6 还不卡”，建议至少从 RTX 4090 / L40S 级别开始试；更保守就是 A100/H100/H800。最终以 `benchmark_live_autodl.py` 的 p95 是否低于 92.9 ms 为准。
+如果目标是“nb_steps 拉满 6 还不卡”，建议至少从 RTX 4090 / L40S 级别开始试；更保守就是 A100/H100/H800。最终以 `benchmark_live_autodl.py` 的 p95 是否低于所选 buffer 的音频时长为准。
