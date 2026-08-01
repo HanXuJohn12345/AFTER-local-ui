@@ -19,7 +19,8 @@ import torchaudio
 
 ROOT = Path(__file__).resolve().parent
 PRETRAINED = ROOT / "pretrained"
-MODEL_PATH = PRETRAINED / "afterv2.audio.instr.ts"
+DEFAULT_MODEL_NAME = "afterv2.audio.instr.ts"
+MODEL_PATH = PRETRAINED / DEFAULT_MODEL_NAME
 MAP_PATH = PRETRAINED / "afterv2.audio.instr.png"
 OUTPUT_DIR = PRETRAINED / "ui_outputs"
 SAMPLE_RATE = 44100
@@ -31,7 +32,9 @@ torch.set_grad_enabled(False)
 _infer_lock = threading.Lock()
 _live_model = None
 _live_device = DEFAULT_DEVICE
+_live_model_path = None
 _live_fx_state = None
+_map_model_cache = {}
 INDEX_HTML = r"""<!doctype html>
 <html lang="en">
 <head>
@@ -312,13 +315,19 @@ INDEX_HTML = r"""<!doctype html>
     <div class="grid">
       <section>
         <h2>Timbre Map + 6D</h2>
+        <label>
+          Model / Instrument <strong id="modelValue">afterv2.audio.instr.ts</strong>
+          <select id="modelSelect">
+            <option value="afterv2.audio.instr.ts">afterv2.audio.instr.ts</option>
+          </select>
+        </label>
         <div class="readout">
           <div class="metric"><span>Mode</span><strong>2D map + 6D</strong></div>
           <div class="metric"><span>Range</span><strong>-4.00 to 4.00</strong></div>
           <div class="metric"><span>Buffer</span><strong id="bufferReadout">4096</strong></div>
         </div>
         <div id="mapWrap" class="map-wrap" title="Drag to convert XY map position into 6D timbre latent values.">
-          <img id="map" src="/map.png" alt="Timbre map" />
+          <img id="map" src="/map.png?model_name=afterv2.audio.instr.ts" alt="Timbre map" />
           <div id="dot"></div>
         </div>
         <div class="xy-readout">
@@ -446,6 +455,9 @@ INDEX_HTML = r"""<!doctype html>
   <script>
     const timbreSliders = Array.from(document.querySelectorAll(".timbre-slider"));
     const timbreValueEls = timbreSliders.map((_, index) => document.getElementById(`timbreValue${index}`));
+    const modelSelect = document.getElementById("modelSelect");
+    const modelValue = document.getElementById("modelValue");
+    const mapImage = document.getElementById("map");
     const mapWrap = document.getElementById("mapWrap");
     const dot = document.getElementById("dot");
     const mapXValue = document.getElementById("mapXValue");
@@ -523,6 +535,8 @@ INDEX_HTML = r"""<!doctype html>
     let lastMorphFrame = performance.now();
     let mapPointerActive = false;
     let mapRequestId = 0;
+    let currentMapX = 0;
+    let currentMapY = 0;
 
     function setStatus(text, mode) {
       statusBox.textContent = text;
@@ -536,6 +550,7 @@ INDEX_HTML = r"""<!doctype html>
       liveStartBtn.disabled = liveMode || recording;
       liveStopBtn.disabled = !liveMode;
       bufferSize.disabled = liveMode || recording;
+      modelSelect.disabled = liveMode || recording;
     }
 
     function updateTimer() {
@@ -553,9 +568,48 @@ INDEX_HTML = r"""<!doctype html>
       return Math.min(Math.max(Number(value) || 0, -1), 1);
     }
 
+    function currentModelName() {
+      return modelSelect.value || "afterv2.audio.instr.ts";
+    }
+
+    function updateModelUi() {
+      const name = currentModelName();
+      modelValue.textContent = name;
+      mapImage.src = `/map.png?model_name=${encodeURIComponent(name)}&t=${Date.now()}`;
+    }
+
+    async function loadModelOptions() {
+      try {
+        const response = await fetch("/api/models");
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not list models.");
+        const models = Array.isArray(data.models) ? data.models : [];
+        modelSelect.innerHTML = "";
+        for (const model of models) {
+          const option = document.createElement("option");
+          option.value = model.name;
+          option.textContent = model.label || model.name;
+          if (model.selected) option.selected = true;
+          modelSelect.appendChild(option);
+        }
+        if (!modelSelect.options.length) {
+          const option = document.createElement("option");
+          option.value = "afterv2.audio.instr.ts";
+          option.textContent = "afterv2.audio.instr.ts";
+          modelSelect.appendChild(option);
+        }
+        updateModelUi();
+      } catch (err) {
+        setStatus(err.message, "err");
+        updateModelUi();
+      }
+    }
+
     function setMapDot(x, y) {
       const cx = clampMapValue(x);
       const cy = clampMapValue(y);
+      currentMapX = cx;
+      currentMapY = cy;
       dot.style.left = `${((cx + 1) / 2) * 100}%`;
       dot.style.top = `${((1 - cy) / 2) * 100}%`;
       mapXValue.textContent = cx.toFixed(2);
@@ -573,7 +627,11 @@ INDEX_HTML = r"""<!doctype html>
       const requestId = ++mapRequestId;
       setMapDot(x, y);
       try {
-        const query = new URLSearchParams({ x: x.toFixed(4), y: y.toFixed(4) });
+        const query = new URLSearchParams({
+          x: x.toFixed(4),
+          y: y.toFixed(4),
+          model_name: currentModelName()
+        });
         const response = await fetch(`/api/map2latent?${query.toString()}`);
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Map conversion failed.");
@@ -688,6 +746,12 @@ INDEX_HTML = r"""<!doctype html>
     setMapDot(0, 0);
     setTimbreTargetAll(targetTimbreValues, true);
     updateBufferUi();
+    loadModelOptions();
+    modelSelect.addEventListener("change", () => {
+      updateModelUi();
+      requestMapLatent(currentMapX, currentMapY);
+      setStatus(`Model selected: ${currentModelName()}`, "ok");
+    });
     bufferSize.addEventListener("change", updateBufferUi);
     steps.addEventListener("input", () => setStepsValue(steps.value));
     guidance.addEventListener("input", () => guidanceValue.textContent = Number(guidance.value).toFixed(2));
@@ -808,6 +872,7 @@ INDEX_HTML = r"""<!doctype html>
       liveBusy = true;
       const block = liveQueue.shift();
       const query = new URLSearchParams({
+        model_name: currentModelName(),
         zt: currentTimbreString(),
         nb_steps: steps.value,
         guidance_structure: guidance.value,
@@ -820,7 +885,6 @@ INDEX_HTML = r"""<!doctype html>
         delay_mix: delayMix.value,
         delay_time_ms: delayTime.value,
         delay_feedback: delayFeedback.value,
-        buffer_size: bufferSize.value,
         sr: liveContext.sampleRate.toString()
       });
       try {
@@ -862,6 +926,7 @@ INDEX_HTML = r"""<!doctype html>
       liveContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
       await liveContext.resume();
       const resetQuery = new URLSearchParams({
+        model_name: currentModelName(),
         nb_steps: steps.value,
         guidance_structure: guidance.value,
         buffer_size: bufferSize.value
@@ -947,6 +1012,7 @@ INDEX_HTML = r"""<!doctype html>
       if (!audioBlob) return;
       const form = new FormData();
       form.append("audio", audioBlob, audioName);
+      form.append("model_name", currentModelName());
       form.append("zt", targetTimbreValues.map((value) => value.toFixed(4)).join(","));
       form.append("nb_steps", steps.value);
       form.append("guidance_structure", guidance.value);
@@ -1042,10 +1108,71 @@ def _device_info(device: str):
     return info
 
 
-def _load_script_model(device: str):
-    model = torch.jit.load(str(MODEL_PATH), map_location="cpu").eval()
+def _available_models():
+    models = []
+    for path in sorted(PRETRAINED.glob("*.ts")):
+        if not path.is_file():
+            continue
+        models.append({
+            "name": path.name,
+            "label": path.stem.replace("afterv2.audio.", ""),
+            "size_bytes": path.stat().st_size,
+            "selected": path.name == DEFAULT_MODEL_NAME,
+            "has_map": path.with_suffix(".png").exists(),
+        })
+    if not models and MODEL_PATH.exists():
+        models.append({
+            "name": MODEL_PATH.name,
+            "label": MODEL_PATH.stem,
+            "size_bytes": MODEL_PATH.stat().st_size,
+            "selected": True,
+            "has_map": MAP_PATH.exists(),
+        })
+    return models
+
+
+def _resolve_model_path(raw=None):
+    name = DEFAULT_MODEL_NAME if raw in (None, "") else Path(str(raw)).name
+    if not name.lower().endswith(".ts"):
+        raise ValueError("Model file must be a .ts TorchScript export.")
+    path = PRETRAINED / name
+    if not path.exists() or not path.is_file():
+        raise FileNotFoundError(f"Model not found in pretrained/: {name}")
+    return path
+
+
+def _resolve_map_path(model_name=None):
+    try:
+        model_path = _resolve_model_path(model_name)
+        map_path = model_path.with_suffix(".png")
+        if map_path.exists() and map_path.is_file():
+            return map_path
+    except Exception:
+        pass
+    return MAP_PATH
+
+
+def _model_device_info(device: str, model_path: Path):
+    info = _device_info(device)
+    info["model_name"] = model_path.name
+    return info
+
+
+def _load_script_model(device: str, model_name=None):
+    model_path = _resolve_model_path(model_name)
+    model = torch.jit.load(str(model_path), map_location="cpu").eval()
     if device != "cpu":
         model = model.to(device)
+    return model
+
+
+def _load_map_model(model_name=None):
+    model_path = _resolve_model_path(model_name)
+    key = model_path.name
+    model = _map_model_cache.get(key)
+    if model is None:
+        model = torch.jit.load(str(model_path), map_location="cpu").eval()
+        _map_model_cache[key] = model
     return model
 
 
@@ -1305,11 +1432,10 @@ def _parse_timbre_values(raw):
     return (values + [0.0] * 6)[:6]
 
 
-def _map_to_timbre_values(x_value: float, y_value: float):
-    device = DEFAULT_DEVICE
+def _map_to_timbre_values(x_value: float, y_value: float, model_name=None):
     with _infer_lock, torch.inference_mode():
-        model = _load_script_model(device)
-        coords = torch.tensor([[[float(x_value)], [float(y_value)]]], dtype=torch.float32, device=device)
+        model = _load_map_model(model_name)
+        coords = torch.tensor([[[float(x_value)], [float(y_value)]]], dtype=torch.float32)
         zt = model.map2latent(coords).detach().cpu().reshape(1, -1)[0]
     return [_clamp_float(float(value), -4.0, 4.0) for value in zt[:6]]
 
@@ -1344,9 +1470,8 @@ def _generate_timbre(model, waveform, timbre_values, nb_steps: int, guidance: fl
     return model.generate_timbre(torch.cat([audio, latent], dim=1)).cpu().squeeze(0)
 
 
-def _run_after(input_path: Path, timbre_values, nb_steps: int, guidance: float, input_gain_db: float = 0.0, wet_mix: float = 1.0, spring_mix: float = 0.0, spring_decay: float = 0.7, reverb_boost: float = 1.0, delay_mix: float = 0.0, delay_time_ms: float = 320.0, delay_feedback: float = 0.35, buffer_size: int = CHUNK_SIZE):
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
+def _run_after(input_path: Path, timbre_values, nb_steps: int, guidance: float, input_gain_db: float = 0.0, wet_mix: float = 1.0, spring_mix: float = 0.0, spring_decay: float = 0.7, reverb_boost: float = 1.0, delay_mix: float = 0.0, delay_time_ms: float = 320.0, delay_feedback: float = 0.35, buffer_size: int = CHUNK_SIZE, model_name=None):
+    model_path = _resolve_model_path(model_name)
 
     waveform = _load_audio(input_path)
     source_len = waveform.shape[-1]
@@ -1355,7 +1480,7 @@ def _run_after(input_path: Path, timbre_values, nb_steps: int, guidance: float, 
 
     device = DEFAULT_DEVICE
     with _infer_lock, torch.inference_mode():
-        model = _load_script_model(device)
+        model = _load_script_model(device, model_path.name)
         chunks = []
         buffer_size = _parse_buffer_size(buffer_size)
         for start in range(0, source_len, buffer_size):
@@ -1376,17 +1501,17 @@ def _run_after(input_path: Path, timbre_values, nb_steps: int, guidance: float, 
     out_name = f"after_{uuid.uuid4().hex}.wav"
     out_path = OUTPUT_DIR / out_name
     torchaudio.save(str(out_path), output, SAMPLE_RATE)
-    return out_name, source_len / SAMPLE_RATE, len(chunks), _device_info(device)
+    return out_name, source_len / SAMPLE_RATE, len(chunks), _model_device_info(device, model_path)
 
-def _reset_live_model(nb_steps: int = 1, guidance: float = 1.0, buffer_size: int = CHUNK_SIZE):
-    global _live_model, _live_device, _live_fx_state
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
+def _reset_live_model(nb_steps: int = 1, guidance: float = 1.0, buffer_size: int = CHUNK_SIZE, model_name=None):
+    global _live_model, _live_device, _live_model_path, _live_fx_state
+    model_path = _resolve_model_path(model_name)
 
     device = DEFAULT_DEVICE
     with _infer_lock, torch.inference_mode():
         _live_device = device
-        _live_model = _load_script_model(device)
+        _live_model_path = model_path
+        _live_model = _load_script_model(device, model_path.name)
         buffer_size = _parse_buffer_size(buffer_size)
         dummy_audio = torch.zeros(1, buffer_size)
         _generate_timbre(_live_model, dummy_audio, [0.0] * 6, nb_steps, guidance, device)
@@ -1394,18 +1519,20 @@ def _reset_live_model(nb_steps: int = 1, guidance: float = 1.0, buffer_size: int
         _live_fx_state = _make_fx_state(SAMPLE_RATE)
         if device.startswith("cuda"):
             torch.cuda.synchronize()
-    return _device_info(device)
+    return _model_device_info(device, model_path)
 
 
-def _get_live_model_locked():
-    global _live_model, _live_device
-    if _live_model is None:
+def _get_live_model_locked(model_name=None):
+    global _live_model, _live_device, _live_model_path
+    model_path = _resolve_model_path(model_name)
+    if _live_model is None or _live_model_path != model_path:
         _live_device = DEFAULT_DEVICE
-        _live_model = _load_script_model(_live_device)
+        _live_model_path = model_path
+        _live_model = _load_script_model(_live_device, model_path.name)
     return _live_model
 
 
-def _process_live_chunk(raw: bytes, sr: int, timbre_values, nb_steps: int, guidance: float, input_gain_db: float = 0.0, wet_mix: float = 1.0, spring_mix: float = 0.0, spring_decay: float = 0.7, reverb_boost: float = 1.0, delay_mix: float = 0.0, delay_time_ms: float = 320.0, delay_feedback: float = 0.35, buffer_size: int = CHUNK_SIZE):
+def _process_live_chunk(raw: bytes, sr: int, timbre_values, nb_steps: int, guidance: float, input_gain_db: float = 0.0, wet_mix: float = 1.0, spring_mix: float = 0.0, spring_decay: float = 0.7, reverb_boost: float = 1.0, delay_mix: float = 0.0, delay_time_ms: float = 320.0, delay_feedback: float = 0.35, buffer_size: int = CHUNK_SIZE, model_name=None):
     if not raw:
         raise ValueError("Empty live audio chunk.")
     samples = np.frombuffer(raw, dtype="<f4").astype(np.float32, copy=True)
@@ -1425,13 +1552,13 @@ def _process_live_chunk(raw: bytes, sr: int, timbre_values, nb_steps: int, guida
 
     global _live_fx_state
     with _infer_lock, torch.inference_mode():
-        model = _get_live_model_locked()
+        model = _get_live_model_locked(model_name)
         generated = _generate_timbre(model, model_waveform, timbre_values, nb_steps, guidance, _live_device).squeeze(0)
         output = _mix_wet_dry(generated, dry, wet_mix)
         output, _live_fx_state = _apply_post_fx(output, SAMPLE_RATE, spring_mix, spring_decay, reverb_boost, delay_mix, delay_time_ms, delay_feedback, _live_fx_state)
 
     output = output.clamp(-1.0, 1.0).numpy().astype("<f4", copy=False)
-    return output.tobytes(), int(output.shape[0]), _device_info(_live_device)
+    return output.tobytes(), int(output.shape[0]), _model_device_info(_live_device, _live_model_path or _resolve_model_path(model_name))
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "AFTERLocalUI/0.1"
@@ -1447,7 +1574,11 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         if path == "/map.png":
-            _serve_file(self, MAP_PATH, "image/png")
+            params = parse_qs(urlparse(self.path).query)
+            _serve_file(self, _resolve_map_path(params.get("model_name", [DEFAULT_MODEL_NAME])[0]), "image/png")
+            return
+        if path == "/api/models":
+            _json(self, 200, {"models": _available_models()})
             return
         if path.startswith("/outputs/"):
             name = Path(path.split("/outputs/", 1)[1]).name
@@ -1455,13 +1586,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/map2latent":
             params = parse_qs(urlparse(self.path).query)
+            model_name = params.get("model_name", [DEFAULT_MODEL_NAME])[0]
             x_value = _clamp_float(params.get("x", ["0"])[0], -1.0, 1.0)
             y_value = _clamp_float(params.get("y", ["0"])[0], -1.0, 1.0)
-            values = _map_to_timbre_values(x_value, y_value)
-            _json(self, 200, {"x": x_value, "y": y_value, "zt": values})
+            values = _map_to_timbre_values(x_value, y_value, model_name)
+            _json(self, 200, {"x": x_value, "y": y_value, "zt": values, "model_name": _resolve_model_path(model_name).name})
             return
         if path == "/health":
-            _json(self, 200, {"ok": True, "model": str(MODEL_PATH), "model_exists": MODEL_PATH.exists(), "buffer_sizes": BUFFER_SIZES, **_device_info(DEFAULT_DEVICE)})
+            _json(self, 200, {"ok": True, "model": str(MODEL_PATH), "model_exists": MODEL_PATH.exists(), "models": _available_models(), "buffer_sizes": BUFFER_SIZES, **_device_info(DEFAULT_DEVICE)})
             return
         self.send_error(404)
 
@@ -1472,10 +1604,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/live_reset":
                 params = parse_qs(parsed.query)
+                model_name = params.get("model_name", [DEFAULT_MODEL_NAME])[0]
                 nb_steps = max(1, min(6, int(params.get("nb_steps", ["1"])[0])))
                 guidance = max(0.0, min(2.0, float(params.get("guidance_structure", ["1"])[0])))
                 buffer_size = _parse_buffer_size(params.get("buffer_size", [str(CHUNK_SIZE)])[0])
-                device_info = _reset_live_model(nb_steps, guidance, buffer_size)
+                device_info = _reset_live_model(nb_steps, guidance, buffer_size, model_name)
                 _json(self, 200, {"ok": True, "elapsed_seconds": time.perf_counter() - started, **device_info})
                 return
 
@@ -1484,6 +1617,7 @@ class Handler(BaseHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", "0"))
                 raw = self.rfile.read(length)
                 sr = int(float(params.get("sr", [str(SAMPLE_RATE)])[0]))
+                model_name = params.get("model_name", [DEFAULT_MODEL_NAME])[0]
                 timbre_values = _parse_timbre_values(params.get("zt", ["0,0,0,0,0,0"])[0])
                 nb_steps = max(1, min(6, int(params.get("nb_steps", ["1"])[0])))
                 guidance = max(0.0, min(2.0, float(params.get("guidance_structure", ["1"])[0])))
@@ -1496,7 +1630,7 @@ class Handler(BaseHTTPRequestHandler):
                 delay_time_ms = max(1.0, min(2000.0, float(params.get("delay_time_ms", ["320"])[0])))
                 delay_feedback = max(0.0, min(0.95, float(params.get("delay_feedback", ["0.35"])[0])))
                 buffer_size = _parse_buffer_size(params.get("buffer_size", [str(CHUNK_SIZE)])[0])
-                body, sample_count, device_info = _process_live_chunk(raw, sr, timbre_values, nb_steps, guidance, input_gain_db, wet_mix, spring_mix, spring_decay, reverb_boost, delay_mix, delay_time_ms, delay_feedback, buffer_size)
+                body, sample_count, device_info = _process_live_chunk(raw, sr, timbre_values, nb_steps, guidance, input_gain_db, wet_mix, spring_mix, spring_decay, reverb_boost, delay_mix, delay_time_ms, delay_feedback, buffer_size, model_name)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(len(body)))
@@ -1535,6 +1669,7 @@ class Handler(BaseHTTPRequestHandler):
                 tmp.write(item.file.read())
 
             try:
+                model_name = form.getfirst("model_name", DEFAULT_MODEL_NAME)
                 timbre_values = _parse_timbre_values(form.getfirst("zt", "0,0,0,0,0,0"))
                 nb_steps = max(1, min(6, int(form.getfirst("nb_steps", "2"))))
                 guidance = max(0.0, min(2.0, float(form.getfirst("guidance_structure", "1"))))
@@ -1547,7 +1682,7 @@ class Handler(BaseHTTPRequestHandler):
                 delay_time_ms = max(1.0, min(2000.0, float(form.getfirst("delay_time_ms", "320"))))
                 delay_feedback = max(0.0, min(0.95, float(form.getfirst("delay_feedback", "0.35"))))
                 buffer_size = _parse_buffer_size(form.getfirst("buffer_size", str(CHUNK_SIZE)))
-                out_name, seconds, chunk_count, device_info = _run_after(tmp_path, timbre_values, nb_steps, guidance, input_gain_db, wet_mix, spring_mix, spring_decay, reverb_boost, delay_mix, delay_time_ms, delay_feedback, buffer_size)
+                out_name, seconds, chunk_count, device_info = _run_after(tmp_path, timbre_values, nb_steps, guidance, input_gain_db, wet_mix, spring_mix, spring_decay, reverb_boost, delay_mix, delay_time_ms, delay_feedback, buffer_size, model_name)
             finally:
                 with contextlib.suppress(FileNotFoundError):
                     tmp_path.unlink()
@@ -1574,7 +1709,8 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"AFTER Local UI running at http://{args.host}:{args.port}", flush=True)
-    print(f"Model: {MODEL_PATH}", flush=True)
+    print(f"Default model: {MODEL_PATH}", flush=True)
+    print(f"Available models: {[model['name'] for model in _available_models()]}", flush=True)
     server.serve_forever()
 
 

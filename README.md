@@ -8,6 +8,7 @@ AFTER is a diffusion-based audio-to-audio transfer model. This UI keeps the expo
 
 - Browser UI: record microphone audio, upload audio, run offline inference, or use live microphone streaming.
 - GPU support: uses CUDA automatically when PyTorch sees a GPU.
+- Model / Instrument selector: choose any local exported `.ts` model placed in `pretrained/`.
 - Timbre controls: original 2D XY map for coarse control plus six 6D latent sliders for fine control.
 - Performance controls: `nb_steps`, `guidance_structure`, `Live Quality`.
 - Performance/playability controls: `Buffer Size`, `Input Gain`, `Wet / Dry`, `Morph Speed`, `Timbre Presets`.
@@ -33,6 +34,27 @@ pretrained/afterv2.audio.instr.png
 ```
 
 The `.png` is used by the restored 2D timbre map UI.
+
+## Adding More Trained Instruments / Models
+
+The UI scans local TorchScript exports in `pretrained/*.ts`. To add a trained instrument or timbre model, copy its exported `.ts` file into `pretrained/` and restart the UI.
+
+Example:
+
+```text
+pretrained/afterv2.audio.instr.ts
+pretrained/afterv2.audio.guitar.ts
+pretrained/afterv2.audio.voice.ts
+pretrained/afterv2.audio.choirs.ts
+```
+
+If a matching `.png` exists next to the model, the 2D timbre map image will switch with the model:
+
+```text
+pretrained/afterv2.audio.guitar.png
+```
+
+The browser can only choose files that already exist on the server machine. It cannot directly browse arbitrary model paths from your laptop for security reasons.
 
 ## Option 1: Local Windows Deployment
 

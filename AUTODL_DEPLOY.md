@@ -1,31 +1,31 @@
-# AutoDL 部署说明
+# AutoDL Deployment Guide
 
-这个版本用于把本地 AFTER UI 部署到 AutoDL GPU 实例上，让其他人通过浏览器访问同一个 GPU 服务。
+This guide deploys the AFTER Local UI on an AutoDL Linux GPU instance. The model runs on AutoDL. A Windows laptop or MacBook only opens the browser UI or an SSH tunnel.
 
-## 可行性结论
+## Feasibility
 
-可行。当前 UI 本身已经支持命令行指定 `--host` 和 `--port`，AutoDL 上只需要监听 `0.0.0.0:6006`，再通过 AutoDL 的自定义服务或 SSH 端口转发访问。
+This is feasible. The UI accepts `--host` and `--port`, so AutoDL should run it on `0.0.0.0:6006` and expose that port through AutoDL custom service or SSH port forwarding.
 
-需要注意：当前 UI 是单进程、单模型、单实时状态设计。它适合一个人演奏/测试，或多人轮流使用；不适合很多人同时点 `Start Live`。如果要多人同时实时演奏，应该开多个 AutoDL 实例，或者以后把 live state 改成按 session 隔离。
+Current limitation: the UI is single-process and has one live model state. It is good for one player or several people taking turns. It is not designed for many simultaneous live performers.
 
-## 推荐 AutoDL 镜像
+## Recommended AutoDL Image
 
-选择已经带 CUDA PyTorch 的镜像，建议：
+Choose an image that already includes CUDA PyTorch:
 
-- Python 3.10 到 3.12
+- Python 3.10 to 3.12
 - PyTorch 2.x + torchaudio 2.x
-- CUDA 11.8/12.1/12.4 均可，重点是 `torch.cuda.is_available()` 必须为 True
-- 显存建议 16GB 起步，24GB 更稳
+- CUDA visible through `torch.cuda.is_available()`
+- 16 GB VRAM minimum for basic tests, 24 GB+ recommended
 
-这个 UI 推理主要需要 `torch`、`torchaudio`、`numpy`。不建议在 AutoDL 上从零安装完整训练依赖，容易被 PyTorch/CUDA 版本拖慢。
+The UI runtime mainly needs `torch`, `torchaudio`, and `numpy`. Avoid installing the full training stack unless you are training models.
 
-## 必需文件
+## Required Files
 
-模型权重默认不提交到 GitHub。请先从官方链接下载 pretrained model：
+Model weights are not committed to GitHub. Download the official pretrained model files first:
 
 https://nubo.ircam.fr/index.php/s/8NFD5gWwbkT4G5P
 
-仓库里至少要有：
+The AutoDL project folder should contain at least:
 
 ```text
 after_local_ui.py
@@ -40,117 +40,134 @@ requirements-autodl-ui.txt
 benchmark_live_autodl.py
 ```
 
-## 上传/进入项目
+## Adding More Trained Instruments / Models
 
-假设项目放在 AutoDL 的 `/root/AFTER`：
+The UI scans local TorchScript exports in `pretrained/*.ts`. To add trained instrument or timbre models, copy the exported `.ts` files into the AutoDL instance's `pretrained/` folder and restart the UI.
+
+Example:
+
+```text
+pretrained/afterv2.audio.instr.ts
+pretrained/afterv2.audio.guitar.ts
+pretrained/afterv2.audio.voice.ts
+pretrained/afterv2.audio.choirs.ts
+```
+
+If a matching `.png` exists next to the model, the 2D timbre map image switches with the model:
+
+```text
+pretrained/afterv2.audio.guitar.png
+```
+
+The browser cannot directly browse arbitrary model paths from your laptop. It can only choose files that already exist on the server machine.
+
+## Upload / Enter Project
+
+Assume the project is placed at `/root/AFTER`:
 
 ```bash
 cd /root/AFTER
 ```
 
-如果脚本没有执行权限：
+If scripts are not executable:
 
 ```bash
 chmod +x install_autodl.sh start_autodl.sh
 ```
 
-## 安装/检查
+## Install / Check
 
 ```bash
 bash install_autodl.sh
 ```
 
-成功时会打印 PyTorch、torchaudio、numpy、CUDA 状态和 GPU 名称。
+A successful check prints PyTorch, torchaudio, numpy, CUDA status, GPU name, and model path.
 
-## 启动服务
+## Start Service
 
 ```bash
 bash start_autodl.sh
 ```
 
-默认监听：
+Default address inside AutoDL:
 
 ```text
 0.0.0.0:6006
 ```
 
-也可以改端口：
+To use another port:
 
 ```bash
 PORT=6008 bash start_autodl.sh
 ```
 
-## 访问
+## Access
 
-在 AutoDL 控制台里使用自定义服务/端口映射访问实例内的 `6006` 端口。注意 AutoDL 自定义服务是公网可访问地址，且平台协议对用途和链接转发有限制；只建议做私下测试，不要公开发布服务链接。
+Use AutoDL custom service / port mapping for instance port `6006`. The custom service address is publicly reachable, so use it for private tests only.
 
-如果不用控制台映射，也可以用 SSH tunnel：
+Alternatively, use SSH tunneling:
 
 ```bash
-ssh -CNg -L 6006:127.0.0.1:6006 root@你的AutoDL主机 -p 你的SSH端口
+ssh -CNg -L 6006:127.0.0.1:6006 root@YOUR_AUTODL_HOST -p YOUR_SSH_PORT
 ```
 
-然后本地浏览器打开：
+Then open locally:
 
 ```text
 http://127.0.0.1:6006/
 ```
 
-## MacBook 访问 AutoDL
+## MacBook Access
 
-AutoDL 部署不等于把模型部署到 MacBook。模型、PyTorch、CUDA、GPU 推理都在 AutoDL 的 Linux 机器上运行；MacBook 只是访问端，负责打开网页、授权麦克风、听输出。
+AutoDL deployment does not mean deploying the model to a MacBook. The model, PyTorch, CUDA, and GPU inference run on the AutoDL Linux instance. The MacBook is only the client: browser, microphone permission, audio playback, and optional SSH tunnel.
 
-MacBook 上只需要：
-
-- Chrome 或 Safari
-- macOS Terminal
-- AutoDL SSH 地址和端口
-
-在 MacBook Terminal 里运行：
+On macOS Terminal, keep this tunnel running:
 
 ```bash
-ssh -CNg -L 6006:127.0.0.1:6006 root@你的AutoDL主机 -p 你的SSH端口
+ssh -CNg -L 6006:127.0.0.1:6006 root@YOUR_AUTODL_HOST -p YOUR_SSH_PORT
 ```
 
-保持这个 Terminal 窗口不要关，然后在 MacBook 浏览器打开：
+Then open Chrome or Safari on the MacBook:
 
 ```text
 http://127.0.0.1:6006/
 ```
 
-如果要用 `Start Live`，浏览器会请求麦克风权限，允许即可。此时音频采集发生在 MacBook 浏览器里，AFTER 推理发生在 AutoDL GPU 上。
+Allow microphone permission if using `Start Live`. Audio capture happens in the MacBook browser, while AFTER inference happens on the AutoDL GPU.
 
-本地 MacBook 直接跑这个模型不推荐：普通 MacBook 没有 CUDA；Apple Silicon 的 MPS 即使可用，也不一定兼容这个导出的实时 TorchScript 路径，性能也不能和 AutoDL GPU 相比。
+Running this model directly on a MacBook is not recommended. Regular MacBooks do not have CUDA, and Apple Silicon MPS may not be compatible with this exported real-time TorchScript path.
 
-健康检查：
+## Health Check
 
 ```bash
 curl http://127.0.0.1:6006/health
 ```
 
-## GPU 实时性能测试
+## GPU Benchmark
 
-部署后先跑：
+Run this after deployment:
 
 ```bash
 python benchmark_live_autodl.py --steps 1,2,4,6 --buffer-size 4096 --chunks 8
 ```
 
-它会输出每个 `nb_steps` 的平均耗时和 p95 耗时。UI 里可以选择 `2048 / 4096 / 8192` buffer；44.1kHz 下分别约等于 `46.4 ms / 92.9 ms / 185.8 ms` 音频。判断标准：
+The UI can choose `2048 / 4096 / 8192` buffer size. At 44.1 kHz, these are about `46.4 ms / 92.9 ms / 185.8 ms` of audio.
 
-- p95 低于所选 buffer 的音频时长：基本能实时不堆积
-- p95 接近所选 buffer 的音频时长：能跑但容易因为浏览器/网络/系统抖动卡
-- p95 高于所选 buffer 的音频时长：会逐渐堆积延迟，也就是听感上“卡”或越来越慢
+Interpretation:
 
-## nb_steps 算力建议
+- p95 below the selected buffer duration: basically real-time.
+- p95 close to the selected buffer duration: usable but sensitive to browser/network/system jitter.
+- p95 above the selected buffer duration: latency will accumulate and it will feel stuck or delayed.
 
-`nb_steps` 基本近似线性增加推理耗时。`nb_steps=6` 大致可以按 `nb_steps=1` 的 5 到 6 倍预算。
+## nb_steps GPU Guidance
 
-实用建议：
+`nb_steps` scales inference cost roughly linearly. `nb_steps=6` can be about 5 to 6 times heavier than `nb_steps=1`.
 
-- T4 / 2060 / 3060：不建议做实时演奏，只适合离线或 nb_steps=1 轻测试
-- RTX 3090 / RTX 4090：适合单人实时测试，nb_steps=1/2 比较现实；nb_steps=6 要实际 benchmark，不保证稳
-- A40 / L40 / L40S：更适合长时间服务，nb_steps=2/4 更稳，nb_steps=6 仍需 benchmark
-- A100 / H100 / H800：更适合追求 nb_steps=6 还想低延迟的场景
+Practical guidance:
 
-如果目标是“nb_steps 拉满 6 还不卡”，建议至少从 RTX 4090 / L40S 级别开始试；更保守就是 A100/H100/H800。最终以 `benchmark_live_autodl.py` 的 p95 是否低于所选 buffer 的音频时长为准。
+- T4 / 2060 / 3060: offline or `nb_steps=1` tests only.
+- RTX 3090 / RTX 4090: good for single-user live tests; `nb_steps=1/2` is realistic, `6` must be benchmarked.
+- A40 / L40 / L40S: better for service deployment; `2/4` is more comfortable.
+- A100 / H100 / H800: recommended if you want `nb_steps=6` with low latency.
+
+Final judgment should come from `benchmark_live_autodl.py`: p95 should be below the selected buffer duration.

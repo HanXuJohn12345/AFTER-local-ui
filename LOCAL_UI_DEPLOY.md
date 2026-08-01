@@ -4,6 +4,7 @@
 
 - 麦克风录音或上传音频
 - 实时 `Start Live`
+- 本地 Model / Instrument 下拉选择器，自动扫描 `pretrained/*.ts`
 - 原版 2D timbre XY map + 6 维 timbre latent 微调滑块
 - Input Gain / Wet Dry / Morph Speed / Live Quality
 - Buffer Size / Timbre Presets
@@ -24,6 +25,8 @@ pretrained/afterv2.audio.instr.data336.range
 pretrained/afterv2.audio.instr.data337-342.range
 pretrained/afterv2.audio.instr.png
 ```
+
+如果你有自己训练/导出的乐器模型，把新的 `.ts` 文件也放进 `pretrained/`，重启 UI 后会出现在 `Model / Instrument` 下拉框里。如果旁边有同名 `.png`，2D timbre map 图片也会一起切换。
 
 ## Windows 本地启动
 
