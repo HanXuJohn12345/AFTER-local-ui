@@ -131,6 +131,24 @@ Then open locally:
 http://127.0.0.1:6006/
 ```
 
+### Access from a MacBook
+
+The AutoDL model server still runs on the AutoDL Linux GPU machine. A MacBook is only the client: browser, microphone permission, and optional SSH tunnel. You do not need CUDA, PyTorch, or the model weights on the MacBook just to use the AutoDL UI.
+
+On macOS Terminal, keep this tunnel running:
+
+```bash
+ssh -CNg -L 6006:127.0.0.1:6006 root@YOUR_AUTODL_HOST -p YOUR_SSH_PORT
+```
+
+Then open Chrome or Safari on the MacBook:
+
+```text
+http://127.0.0.1:6006/
+```
+
+Allow microphone permission in the browser if using `Start Live`.
+
 More detail: [AUTODL_DEPLOY.md](AUTODL_DEPLOY.md)
 
 ## AutoDL Performance Test

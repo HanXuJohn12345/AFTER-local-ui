@@ -96,6 +96,32 @@ ssh -CNg -L 6006:127.0.0.1:6006 root@你的AutoDL主机 -p 你的SSH端口
 http://127.0.0.1:6006/
 ```
 
+## MacBook 访问 AutoDL
+
+AutoDL 部署不等于把模型部署到 MacBook。模型、PyTorch、CUDA、GPU 推理都在 AutoDL 的 Linux 机器上运行；MacBook 只是访问端，负责打开网页、授权麦克风、听输出。
+
+MacBook 上只需要：
+
+- Chrome 或 Safari
+- macOS Terminal
+- AutoDL SSH 地址和端口
+
+在 MacBook Terminal 里运行：
+
+```bash
+ssh -CNg -L 6006:127.0.0.1:6006 root@你的AutoDL主机 -p 你的SSH端口
+```
+
+保持这个 Terminal 窗口不要关，然后在 MacBook 浏览器打开：
+
+```text
+http://127.0.0.1:6006/
+```
+
+如果要用 `Start Live`，浏览器会请求麦克风权限，允许即可。此时音频采集发生在 MacBook 浏览器里，AFTER 推理发生在 AutoDL GPU 上。
+
+本地 MacBook 直接跑这个模型不推荐：普通 MacBook 没有 CUDA；Apple Silicon 的 MPS 即使可用，也不一定兼容这个导出的实时 TorchScript 路径，性能也不能和 AutoDL GPU 相比。
+
 健康检查：
 
 ```bash
