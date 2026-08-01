@@ -21,6 +21,10 @@
 
 ## 必需文件
 
+模型权重默认不提交到 GitHub。请先从官方链接下载 pretrained model：
+
+https://nubo.ircam.fr/index.php/s/8NFD5gWwbkT4G5P
+
 仓库里至少要有：
 
 ```text
