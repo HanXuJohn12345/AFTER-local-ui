@@ -181,7 +181,7 @@ After deployment, run:
 python benchmark_live_autodl.py --steps 1,2,4,6 --buffer-size 4096 --chunks 8
 ```
 
-The default live buffer is `4096` samples at `44100 Hz`, about `92.9 ms` of audio. For real-time performance, benchmark `p95` latency should stay below the audio duration of the selected buffer: `2048` = about `46.4 ms`, `4096` = about `92.9 ms`, `8192` = about `185.8 ms`.
+The default live buffer is `4096` samples at `44100 Hz`, about `92.9 ms` of audio. This exported model has been verified with `4096` and `8192` sample buffers. `2048` is not exposed because the TorchScript encoder can fail on that shorter window. For real-time performance, benchmark `p95` latency should stay below the selected buffer duration: `4096` = about `92.9 ms`, `8192` = about `185.8 ms`.
 
 Rough guidance:
 

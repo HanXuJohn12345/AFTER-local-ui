@@ -6,6 +6,7 @@ import mimetypes
 import tempfile
 import threading
 import time
+import traceback
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,7 +26,7 @@ MAP_PATH = PRETRAINED / "afterv2.audio.instr.png"
 OUTPUT_DIR = PRETRAINED / "ui_outputs"
 SAMPLE_RATE = 44100
 CHUNK_SIZE = 4096
-BUFFER_SIZES = (2048, 4096, 8192)
+BUFFER_SIZES = (4096, 8192)
 MAX_SECONDS = 12
 DEFAULT_DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 torch.set_grad_enabled(False)
@@ -359,9 +360,8 @@ INDEX_HTML = r"""<!doctype html>
           <label>
             Buffer Size <strong id="bufferValue">4096</strong>
             <select id="bufferSize">
-              <option value="2048">2048 - lower latency</option>
               <option value="4096" selected>4096 - balanced</option>
-              <option value="8192">8192 - steadier</option>
+              <option value="8192">8192 - steadier, higher latency</option>
             </select>
           </label>
           <label>

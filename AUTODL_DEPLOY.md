@@ -204,7 +204,7 @@ Run this after deployment:
 python benchmark_live_autodl.py --steps 1,2,4,6 --buffer-size 4096 --chunks 8
 ```
 
-The UI can choose `2048 / 4096 / 8192` buffer size. At 44.1 kHz, these are about `46.4 ms / 92.9 ms / 185.8 ms` of audio.
+The UI can choose `4096 / 8192` buffer size. At 44.1 kHz, these are about `92.9 ms / 185.8 ms` of audio. `2048` is not exposed because this exported TorchScript model can fail on that shorter window during live reset.
 
 Interpretation:
 
