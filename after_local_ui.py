@@ -428,16 +428,16 @@ INDEX_HTML = r"""<!doctype html>
       <section>
         <h2>&#21518;&#22788;&#29702;</h2>
         <label>
-          Spring Mix <strong id="springValue">0%</strong>
-          <input id="springMix" type="range" min="0" max="1" step="0.01" value="0" />
+          Pedal Reverb <strong id="springValue">0%</strong>
+          <input id="springMix" type="range" min="0" max="0.4" step="0.01" value="0" />
         </label>
         <label>
-          Spring Decay <strong id="springDecayValue">0.85</strong>
-          <input id="springDecay" type="range" min="0" max="1" step="0.01" value="0.85" />
+          Pedal Tail <strong id="springDecayValue">0.45</strong>
+          <input id="springDecay" type="range" min="0.15" max="0.85" step="0.01" value="0.45" />
         </label>
         <label>
-          Reverb Boost <strong id="reverbBoostValue">1.0x</strong>
-          <input id="reverbBoost" type="range" min="1" max="8" step="0.1" value="1" />
+          Pedal Level <strong id="reverbBoostValue">1.00x</strong>
+          <input id="reverbBoost" type="range" min="0.5" max="2" step="0.05" value="1" />
         </label>
         <label>
           Delay Mix <strong id="delayValue">0%</strong>
@@ -845,7 +845,7 @@ INDEX_HTML = r"""<!doctype html>
     wetMix.addEventListener("input", () => wetValue.textContent = `${Math.round(Number(wetMix.value) * 100)}%`);
     springMix.addEventListener("input", () => springValue.textContent = `${Math.round(Number(springMix.value) * 100)}%`);
     springDecay.addEventListener("input", () => springDecayValue.textContent = Number(springDecay.value).toFixed(2));
-    reverbBoost.addEventListener("input", () => reverbBoostValue.textContent = `${Number(reverbBoost.value).toFixed(1)}x`);
+    reverbBoost.addEventListener("input", () => reverbBoostValue.textContent = `${Number(reverbBoost.value).toFixed(2)}x`);
     delayMix.addEventListener("input", () => delayValue.textContent = `${Math.round(Number(delayMix.value) * 100)}%`);
     delayTime.addEventListener("input", () => delayTimeValue.textContent = `${Math.round(Number(delayTime.value))} ms`);
     delayFeedback.addEventListener("input", () => delayFeedbackValue.textContent = `${Math.round(Number(delayFeedback.value) * 100)}%`);
@@ -1406,7 +1406,8 @@ def _parse_buffer_size(raw, default: int = CHUNK_SIZE):
 
 
 def _make_fx_state(sample_rate: int):
-    comb_ms = [21.0, 31.0, 43.0, 59.0, 73.0, 89.0, 109.0, 137.0]
+    # Short, damped taps: a pedal-like ambience rather than a huge spring tank.
+    comb_ms = [29.7, 37.1, 43.7, 53.3]
     return {
         "sample_rate": int(sample_rate),
         "spring_buffers": [
@@ -1414,7 +1415,8 @@ def _make_fx_state(sample_rate: int):
             for ms in comb_ms
         ],
         "spring_pos": [0 for _ in comb_ms],
-        "spring_ap_buffer": np.zeros(max(1, int(sample_rate * 0.014)), dtype=np.float32),
+        "spring_lpf": [0.0 for _ in comb_ms],
+        "spring_ap_buffer": np.zeros(max(1, int(sample_rate * 0.006)), dtype=np.float32),
         "spring_ap_pos": 0,
         "delay_buffer": np.zeros(max(1, int(sample_rate * 2.5)), dtype=np.float32),
         "delay_pos": 0,
@@ -1422,44 +1424,58 @@ def _make_fx_state(sample_rate: int):
 
 
 def _apply_spring_reverb_np(samples, state, mix: float, decay: float, reverb_boost: float = 1.0):
-    mix = _clamp_float(mix, 0.0, 1.0)
+    mix = _clamp_float(mix, 0.0, 0.4)
     if mix <= 0.0:
         return samples
 
-    decay = _clamp_float(decay, 0.0, 1.0)
-    boost = _clamp_float(reverb_boost, 1.0, 8.0)
-    feedback_base = min(0.98, 0.48 + decay * 0.47 + (boost - 1.0) * 0.015)
-    wet_gain = (2.2 + decay * 4.8) * boost
-    wet_level = 1.0 + (boost - 1.0) * 0.18
+    decay = _clamp_float(decay, 0.15, 0.85)
+    level = _clamp_float(reverb_boost, 0.5, 2.0)
+    feedback_base = 0.26 + decay * 0.38
+    damp_amount = 0.22 + decay * 0.20
+    wet_gain = (0.45 + decay * 0.35) * level
     buffers = state["spring_buffers"]
     positions = state["spring_pos"]
+    lpf = state.setdefault("spring_lpf", [0.0 for _ in buffers])
+    if len(lpf) != len(buffers):
+        lpf[:] = [0.0 for _ in buffers]
     ap_buffer = state["spring_ap_buffer"]
     ap_pos = int(state["spring_ap_pos"])
     out = np.empty_like(samples, dtype=np.float32)
-    g = 0.62
+    ap_g = 0.38
 
     for n, value in enumerate(samples):
         dry_value = float(value)
-        acc = 0.0
+        wet_acc = 0.0
         for i, buffer in enumerate(buffers):
             pos = positions[i]
             delayed = float(buffer[pos])
-            feedback = min(0.95, feedback_base * (0.95 - i * 0.025))
-            buffer[pos] = np.float32(dry_value + delayed * feedback)
+            lpf[i] += (delayed - lpf[i]) * damp_amount
+            tap = lpf[i]
+            feedback = min(0.68, feedback_base * (0.92 - i * 0.035))
+            injected = dry_value * (0.58 + decay * 0.22) + tap * feedback
+            buffer[pos] = np.float32(np.tanh(injected) * 0.92)
             positions[i] = (pos + 1) % len(buffer)
-            acc += delayed
+            wet_acc += tap
 
-        wet = acc / max(1.0, float(len(buffers)) * 0.55)
+        wet = wet_acc / max(1.0, float(len(buffers)))
         ap_delayed = float(ap_buffer[ap_pos])
-        ap_out = -g * wet + ap_delayed
-        ap_buffer[ap_pos] = np.float32(wet + g * ap_out)
+        ap_out = -ap_g * wet + ap_delayed
+        ap_buffer[ap_pos] = np.float32(wet + ap_g * ap_out)
         ap_pos = (ap_pos + 1) % len(ap_buffer)
-        wet_value = np.tanh(ap_out * wet_gain) * wet_level
+        wet_value = ap_out * wet_gain
         out[n] = np.float32(dry_value * (1.0 - mix) + wet_value * mix)
 
     state["spring_ap_pos"] = ap_pos
     return out
 
+
+def _soft_limit_np(samples):
+    samples = np.nan_to_num(samples, copy=False)
+    peak = float(np.max(np.abs(samples))) if samples.size else 0.0
+    if peak <= 0.98:
+        return samples
+    drive = 1.2 / max(peak, 1e-6)
+    return (np.tanh(samples * drive) / np.tanh(1.2) * 0.98).astype(np.float32, copy=False)
 
 def _apply_delay_np(samples, state, mix: float, time_ms: float, feedback: float):
     mix = _clamp_float(mix, 0.0, 1.0)
@@ -1497,6 +1513,7 @@ def _apply_post_fx(audio, sample_rate: int, spring_mix: float, spring_decay: flo
 
     samples = _apply_spring_reverb_np(samples, fx_state, spring_mix, spring_decay, reverb_boost)
     samples = _apply_delay_np(samples, fx_state, delay_mix, delay_time_ms, delay_feedback)
+    samples = _soft_limit_np(samples)
     samples = np.clip(samples, -1.0, 1.0).astype(np.float32, copy=False)
     output = torch.from_numpy(samples).to(device=original_device, dtype=original_dtype)
     if original_dim == 2:
@@ -1556,7 +1573,7 @@ def _generate_timbre(model, waveform, timbre_values, nb_steps: int, guidance: fl
     return model.generate_timbre(torch.cat([audio, latent], dim=1)).cpu().squeeze(0)
 
 
-def _run_after(input_path: Path, timbre_values, nb_steps: int, guidance: float, input_gain_db: float = 0.0, wet_mix: float = 1.0, spring_mix: float = 0.0, spring_decay: float = 0.7, reverb_boost: float = 1.0, delay_mix: float = 0.0, delay_time_ms: float = 320.0, delay_feedback: float = 0.35, buffer_size: int = CHUNK_SIZE, model_name=None):
+def _run_after(input_path: Path, timbre_values, nb_steps: int, guidance: float, input_gain_db: float = 0.0, wet_mix: float = 1.0, spring_mix: float = 0.0, spring_decay: float = 0.45, reverb_boost: float = 1.0, delay_mix: float = 0.0, delay_time_ms: float = 320.0, delay_feedback: float = 0.35, buffer_size: int = CHUNK_SIZE, model_name=None):
     model_path = _resolve_model_path(model_name)
 
     waveform = _load_audio(input_path)
@@ -1618,7 +1635,7 @@ def _get_live_model_locked(model_name=None):
     return _live_model
 
 
-def _process_live_chunk(raw: bytes, sr: int, timbre_values, nb_steps: int, guidance: float, input_gain_db: float = 0.0, wet_mix: float = 1.0, spring_mix: float = 0.0, spring_decay: float = 0.7, reverb_boost: float = 1.0, delay_mix: float = 0.0, delay_time_ms: float = 320.0, delay_feedback: float = 0.35, buffer_size: int = CHUNK_SIZE, model_name=None):
+def _process_live_chunk(raw: bytes, sr: int, timbre_values, nb_steps: int, guidance: float, input_gain_db: float = 0.0, wet_mix: float = 1.0, spring_mix: float = 0.0, spring_decay: float = 0.45, reverb_boost: float = 1.0, delay_mix: float = 0.0, delay_time_ms: float = 320.0, delay_feedback: float = 0.35, buffer_size: int = CHUNK_SIZE, model_name=None):
     if not raw:
         raise ValueError("Empty live audio chunk.")
     samples = np.frombuffer(raw, dtype="<f4").astype(np.float32, copy=True)
@@ -1716,9 +1733,9 @@ class Handler(BaseHTTPRequestHandler):
                 guidance = max(0.0, min(2.0, float(params.get("guidance_structure", ["1"])[0])))
                 input_gain_db = max(-48.0, min(48.0, float(params.get("input_gain_db", ["0"])[0])))
                 wet_mix = max(0.0, min(1.0, float(params.get("wet_mix", ["1"])[0])))
-                spring_mix = max(0.0, min(1.0, float(params.get("spring_mix", ["0"])[0])))
-                spring_decay = max(0.0, min(1.0, float(params.get("spring_decay", ["0.7"])[0])))
-                reverb_boost = max(1.0, min(8.0, float(params.get("reverb_boost", ["1"])[0])))
+                spring_mix = max(0.0, min(0.4, float(params.get("spring_mix", ["0"])[0])))
+                spring_decay = max(0.15, min(0.85, float(params.get("spring_decay", ["0.45"])[0])))
+                reverb_boost = max(0.5, min(2.0, float(params.get("reverb_boost", ["1"])[0])))
                 delay_mix = max(0.0, min(1.0, float(params.get("delay_mix", ["0"])[0])))
                 delay_time_ms = max(1.0, min(2000.0, float(params.get("delay_time_ms", ["320"])[0])))
                 delay_feedback = max(0.0, min(0.95, float(params.get("delay_feedback", ["0.35"])[0])))
@@ -1769,9 +1786,9 @@ class Handler(BaseHTTPRequestHandler):
                 guidance = max(0.0, min(2.0, float(form.getfirst("guidance_structure", "1"))))
                 input_gain_db = max(-48.0, min(48.0, float(form.getfirst("input_gain_db", "0"))))
                 wet_mix = max(0.0, min(1.0, float(form.getfirst("wet_mix", "1"))))
-                spring_mix = max(0.0, min(1.0, float(form.getfirst("spring_mix", "0"))))
-                spring_decay = max(0.0, min(1.0, float(form.getfirst("spring_decay", "0.7"))))
-                reverb_boost = max(1.0, min(8.0, float(form.getfirst("reverb_boost", "1"))))
+                spring_mix = max(0.0, min(0.4, float(form.getfirst("spring_mix", "0"))))
+                spring_decay = max(0.15, min(0.85, float(form.getfirst("spring_decay", "0.45"))))
+                reverb_boost = max(0.5, min(2.0, float(form.getfirst("reverb_boost", "1"))))
                 delay_mix = max(0.0, min(1.0, float(form.getfirst("delay_mix", "0"))))
                 delay_time_ms = max(1.0, min(2000.0, float(form.getfirst("delay_time_ms", "320"))))
                 delay_feedback = max(0.0, min(0.95, float(form.getfirst("delay_feedback", "0.35"))))

@@ -12,7 +12,7 @@ AFTER is a diffusion-based audio-to-audio transfer model. This UI keeps the expo
 - Timbre controls: original 2D XY map for coarse control plus six 6D latent sliders for fine control.
 - Performance controls: `nb_steps`, `guidance_structure`, `Live Quality`.
 - Performance/playability controls: `Buffer Size`, `Input Gain`, `Wet / Dry`, `Morph Speed`, `Timbre Presets`.
-- Post-processing panel: Spring Reverb, Reverb Boost, Delay.
+- Post-processing panel: Pedal Reverb, Pedal Level, Delay.
 - AutoDL deployment scripts: run the same UI on an AutoDL GPU instance.
 
 ## Model Download
