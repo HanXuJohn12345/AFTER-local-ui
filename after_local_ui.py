@@ -91,6 +91,10 @@ INDEX_HTML = r"""<!doctype html>
       gap: 18px;
       align-items: start;
     }
+    .stack {
+      display: grid;
+      gap: 18px;
+    }
     section {
       border: 1px solid var(--line);
       background: var(--panel);
@@ -324,7 +328,7 @@ INDEX_HTML = r"""<!doctype html>
         <div class="readout">
           <div class="metric"><span>Mode</span><strong>2D map + 6D</strong></div>
           <div class="metric"><span>Range</span><strong>-4.00 to 4.00</strong></div>
-          <div class="metric"><span>Buffer</span><strong id="bufferReadout">4096</strong></div>
+          <div class="metric"><span>Latents</span><strong>6 dims</strong></div>
         </div>
         <div id="mapWrap" class="map-wrap" title="Drag to convert XY map position into 6D timbre latent values.">
           <img id="map" src="/map.png?model_name=afterv2.audio.instr.ts" alt="Timbre map" />
@@ -342,56 +346,65 @@ INDEX_HTML = r"""<!doctype html>
           <label>Timbre Dim 5 <strong id="timbreValue4">0.00</strong><input class="timbre-slider" data-index="4" type="range" min="-4" max="4" step="0.01" value="0" /></label>
           <label>Timbre Dim 6 <strong id="timbreValue5">0.00</strong><input class="timbre-slider" data-index="5" type="range" min="-4" max="4" step="0.01" value="0" /></label>
         </div>
-        <label>
-          Buffer Size <strong id="bufferValue">4096</strong>
-          <select id="bufferSize">
-            <option value="2048">2048 - lower latency</option>
-            <option value="4096" selected>4096 - balanced</option>
-            <option value="8192">8192 - steadier</option>
-          </select>
-        </label>
-        <label>
-          nb_steps <strong id="stepsValue">1</strong>
-          <input id="steps" type="range" min="1" max="6" step="1" value="1" />
-        </label>
-        <label>
-          guidance_structure <strong id="guidanceValue">1.00</strong>
-          <input id="guidance" type="range" min="0" max="2" step="0.05" value="1" />
-        </label>
-        <label>
-          Input Gain <strong id="gainValue">0 dB</strong>
-          <input id="inputGain" type="range" min="-24" max="24" step="1" value="0" />
-        </label>
-        <label>
-          Wet / Dry <strong id="wetValue">100%</strong>
-          <input id="wetMix" type="range" min="0" max="1" step="0.01" value="1" />
-        </label>
-
-        <label>
-          Morph Speed <strong id="morphValue">0.25s</strong>
-          <input id="morphSpeed" type="range" min="0" max="2" step="0.05" value="0.25" />
-        </label>
-        <div class="control-block">
-          <div class="label-line"><span>Live Quality</span><strong id="qualityValue">Fast</strong></div>
-          <div class="segmented">
-            <button id="qualityFast" type="button" class="active">Fast</button>
-            <button id="qualityRich" type="button">Rich</button>
-          </div>
-        </div>
-        <div class="control-block">
-          <div class="label-line"><span>Timbre Presets</span><strong id="presetValue">A</strong></div>
-          <div class="preset-row">
-            <button type="button" class="preset-btn active" data-preset="0">A</button>
-            <button type="button" class="preset-btn" data-preset="1">B</button>
-            <button type="button" class="preset-btn" data-preset="2">C</button>
-            <button type="button" class="preset-btn" data-preset="3">D</button>
-            <button id="savePresetBtn" type="button">Save</button>
-          </div>
-        </div>
       </section>
 
-      <section>
-        <h2>Input</h2>
+      <div class="stack">
+        <section>
+          <h2>Run Controls</h2>
+          <div class="readout">
+            <div class="metric"><span>Buffer</span><strong id="bufferReadout">4096</strong></div>
+            <div class="metric"><span>Quality</span><strong id="qualityValue">Fast</strong></div>
+            <div class="metric"><span>Preset</span><strong id="presetValue">A</strong></div>
+          </div>
+          <label>
+            Buffer Size <strong id="bufferValue">4096</strong>
+            <select id="bufferSize">
+              <option value="2048">2048 - lower latency</option>
+              <option value="4096" selected>4096 - balanced</option>
+              <option value="8192">8192 - steadier</option>
+            </select>
+          </label>
+          <label>
+            nb_steps <strong id="stepsValue">1</strong>
+            <input id="steps" type="range" min="1" max="6" step="1" value="1" />
+          </label>
+          <label>
+            guidance_structure <strong id="guidanceValue">1.00</strong>
+            <input id="guidance" type="range" min="0" max="2" step="0.05" value="1" />
+          </label>
+          <label>
+            Input Gain <strong id="gainValue">0 dB</strong>
+            <input id="inputGain" type="range" min="-24" max="24" step="1" value="0" />
+          </label>
+          <label>
+            Wet / Dry <strong id="wetValue">100%</strong>
+            <input id="wetMix" type="range" min="0" max="1" step="0.01" value="1" />
+          </label>
+          <label>
+            Morph Speed <strong id="morphValue">0.25s</strong>
+            <input id="morphSpeed" type="range" min="0" max="2" step="0.05" value="0.25" />
+          </label>
+          <div class="control-block">
+            <div class="label-line"><span>Live Quality</span></div>
+            <div class="segmented">
+              <button id="qualityFast" type="button" class="active">Fast</button>
+              <button id="qualityRich" type="button">Rich</button>
+            </div>
+          </div>
+          <div class="control-block">
+            <div class="label-line"><span>Timbre Presets</span></div>
+            <div class="preset-row">
+              <button type="button" class="preset-btn active" data-preset="0">A</button>
+              <button type="button" class="preset-btn" data-preset="1">B</button>
+              <button type="button" class="preset-btn" data-preset="2">C</button>
+              <button type="button" class="preset-btn" data-preset="3">D</button>
+              <button id="savePresetBtn" type="button">Save</button>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Input</h2>
         <div class="row">
           <button id="recordBtn" class="primary">Start Mic</button>
           <button id="stopBtn" class="danger" disabled>Stop</button>
@@ -409,10 +422,11 @@ INDEX_HTML = r"""<!doctype html>
           <button id="liveStopBtn" class="danger" disabled>Stop Live</button>
         </div>
         <div id="status" class="status" style="margin-top: 14px;">Record from the microphone or choose an audio file.</div>
-      </section>
+        </section>
+      </div>
 
       <section>
-        <h2>后处理</h2>
+        <h2>&#21518;&#22788;&#29702;</h2>
         <label>
           Spring Mix <strong id="springValue">0%</strong>
           <input id="springMix" type="range" min="0" max="1" step="0.01" value="0" />
@@ -543,6 +557,82 @@ INDEX_HTML = r"""<!doctype html>
       statusBox.className = "status" + (mode ? " " + mode : "");
     }
 
+    function describeFetchError(label, err) {
+      const raw = err && err.message ? err.message : String(err || "Unknown error");
+      if (raw.startsWith(label + ":")) return raw;
+      if (/Load failed|Failed to fetch|NetworkError|Network request failed|cancelled|aborted/i.test(raw)) {
+        return `${label}: network request failed (${raw}). On AutoDL/Mac, use an SSH tunnel to http://127.0.0.1:6006 or an HTTPS service, then check /health and the AutoDL server log.`;
+      }
+      return `${label}: ${raw}`;
+    }
+
+    function httpErrorMessage(label, response, detail) {
+      const suffix = detail ? ` - ${detail}` : "";
+      return `${label}: HTTP ${response.status}${suffix}`;
+    }
+
+    async function fetchJson(label, url, options) {
+      let response;
+      try {
+        response = await fetch(url, options);
+      } catch (err) {
+        throw new Error(describeFetchError(label, err));
+      }
+      const text = await response.text().catch(() => "");
+      let data = {};
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch (_) {
+          if (response.ok) throw new Error(`${label}: invalid JSON response.`);
+          data = { error: text.slice(0, 240) };
+        }
+      }
+      if (!response.ok) {
+        throw new Error(httpErrorMessage(label, response, data.error || response.statusText));
+      }
+      return data;
+    }
+
+    async function fetchBinary(label, url, options) {
+      let response;
+      try {
+        response = await fetch(url, options);
+      } catch (err) {
+        throw new Error(describeFetchError(label, err));
+      }
+      if (!response.ok) {
+        let detail = response.statusText;
+        const text = await response.text().catch(() => "");
+        if (text) {
+          try { detail = JSON.parse(text).error || detail; } catch (_) { detail = text.slice(0, 240); }
+        }
+        throw new Error(httpErrorMessage(label, response, detail));
+      }
+      return response;
+    }
+
+    function ensureMicrophoneAvailable(label) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error(`${label}: microphone input requires HTTPS or localhost. On a MacBook, open the UI through SSH tunnel http://127.0.0.1:6006 instead of a plain remote http:// address.`);
+      }
+    }
+
+    function stopLiveAfterFailure(message) {
+      liveMode = false;
+      liveQueue = [];
+      liveBusy = false;
+      withSuppress(() => { if (liveProcessor) liveProcessor.disconnect(); });
+      if (liveStream) liveStream.getTracks().forEach(t => t.stop());
+      const closingContext = liveContext;
+      liveProcessor = null;
+      liveStream = null;
+      liveContext = null;
+      if (closingContext) withSuppress(() => closingContext.close());
+      liveLatency.textContent = "-";
+      setStatus(message, "err");
+      updateControls();
+    }
     function updateControls() {
       runBtn.disabled = !audioBlob || recording || liveMode;
       recordBtn.disabled = recording || liveMode;
@@ -580,9 +670,7 @@ INDEX_HTML = r"""<!doctype html>
 
     async function loadModelOptions() {
       try {
-        const response = await fetch("/api/models");
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Could not list models.");
+        const data = await fetchJson("List models", "/api/models");
         const models = Array.isArray(data.models) ? data.models : [];
         modelSelect.innerHTML = "";
         for (const model of models) {
@@ -600,7 +688,7 @@ INDEX_HTML = r"""<!doctype html>
         }
         updateModelUi();
       } catch (err) {
-        setStatus(err.message, "err");
+        setStatus(describeFetchError("List models", err), "err");
         updateModelUi();
       }
     }
@@ -632,13 +720,11 @@ INDEX_HTML = r"""<!doctype html>
           y: y.toFixed(4),
           model_name: currentModelName()
         });
-        const response = await fetch(`/api/map2latent?${query.toString()}`);
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Map conversion failed.");
+        const data = await fetchJson("Map conversion", `/api/map2latent?${query.toString()}`);
         if (requestId !== mapRequestId) return;
         setTimbreTargetAll(data.zt || [], false);
       } catch (err) {
-        setStatus(err.message, "err");
+        setStatus(describeFetchError("Map conversion", err), "err");
       }
     }
 
@@ -809,6 +895,7 @@ INDEX_HTML = r"""<!doctype html>
     }
 
     async function startRecording() {
+      ensureMicrophoneAvailable("Record mic");
       mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -889,23 +976,18 @@ INDEX_HTML = r"""<!doctype html>
       });
       try {
         const body = block.buffer.slice(block.byteOffset, block.byteOffset + block.byteLength);
-        const response = await fetch(`/api/live_chunk?${query.toString()}`, {
+        const response = await fetchBinary("Live chunk", `/api/live_chunk?${query.toString()}`, {
           method: "POST",
           headers: { "Content-Type": "application/octet-stream" },
           body
         });
-        if (!response.ok) {
-          let msg = "Live chunk failed.";
-          try { msg = (await response.json()).error || msg; } catch (_) {}
-          throw new Error(msg);
-        }
         const sampleRate = Number(response.headers.get("X-Sample-Rate") || "44100");
         const arr = new Float32Array(await response.arrayBuffer());
         scheduleLiveOutput(arr, sampleRate);
         const elapsed = Number(response.headers.get("X-Elapsed-Seconds") || "0");
         setStatus(`Live running on ${liveDevice}. chunk ${liveProcessedChunks}, model ${elapsed.toFixed(2)}s, dropped ${liveDroppedChunks}.`, "busy");
       } catch (err) {
-        setStatus(err.message, "err");
+        stopLiveAfterFailure(describeFetchError("Live chunk", err));
       } finally {
         liveBusy = false;
         if (liveMode) pumpLiveQueue();
@@ -915,6 +997,7 @@ INDEX_HTML = r"""<!doctype html>
     async function startLive() {
       liveStartBtn.disabled = true;
       setStatus("Starting microphone and loading live model.", "busy");
+      ensureMicrophoneAvailable("Start Live");
       liveStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -931,9 +1014,7 @@ INDEX_HTML = r"""<!doctype html>
         guidance_structure: guidance.value,
         buffer_size: bufferSize.value
       });
-      const reset = await fetch(`/api/live_reset?${resetQuery.toString()}`, { method: "POST" });
-      const resetData = await reset.json().catch(() => ({}));
-      if (!reset.ok) throw new Error(resetData.error || "Could not reset live model.");
+      const resetData = await fetchJson("Live reset", `/api/live_reset?${resetQuery.toString()}`, { method: "POST" });
       liveDevice = resetData.device_name ? `${resetData.device} / ${resetData.device_name}` : (resetData.device || "unknown");
 
       const source = liveContext.createMediaStreamSource(liveStream);
@@ -979,7 +1060,7 @@ INDEX_HTML = r"""<!doctype html>
     }
 
     recordBtn.addEventListener("click", () => {
-      startRecording().catch(err => setStatus(err.message, "err"));
+      startRecording().catch(err => setStatus(describeFetchError("Record mic", err), "err"));
     });
     stopBtn.addEventListener("click", () => {
       stopRecording().catch(err => setStatus(err.message, "err"));
@@ -1029,16 +1110,14 @@ INDEX_HTML = r"""<!doctype html>
       setStatus("Running AFTER inference. Short takes are friendlier for this exported model.", "busy");
       const started = performance.now();
       try {
-        const response = await fetch("/api/generate", { method: "POST", body: form });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Generation failed.");
+        const data = await fetchJson("Run AFTER", "/api/generate", { method: "POST", body: form });
         outputAudio.src = data.output_url + "?t=" + Date.now();
         sourceSeconds.textContent = data.source_seconds.toFixed(2);
         chunks.textContent = data.chunks;
         elapsed.textContent = data.elapsed_seconds.toFixed(2) + "s";
         setStatus(`Done on ${data.device || "unknown"}${data.device_name ? " / " + data.device_name : ""}.`, "ok");
       } catch (err) {
-        setStatus(err.message, "err");
+        setStatus(describeFetchError("Run AFTER", err), "err");
       } finally {
         runBtn.disabled = !audioBlob;
       }
@@ -1046,13 +1125,11 @@ INDEX_HTML = r"""<!doctype html>
 
     liveStartBtn.addEventListener("click", () => {
       startLive().catch(err => {
-        setStatus(err.message, "err");
-        liveMode = false;
-        updateControls();
+        stopLiveAfterFailure(describeFetchError("Start Live", err));
       });
     });
     liveStopBtn.addEventListener("click", () => {
-      stopLive().catch(err => setStatus(err.message, "err"));
+      stopLive().catch(err => setStatus(describeFetchError("Stop Live", err), "err"));
     });
     updateControls();
   </script>
@@ -1061,10 +1138,18 @@ INDEX_HTML = r"""<!doctype html>
 """
 
 
+def _cors(handler):
+    handler.send_header("Access-Control-Allow-Origin", "*")
+    handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    handler.send_header("Access-Control-Allow-Headers", "Content-Type")
+    handler.send_header("Access-Control-Expose-Headers", "X-Sample-Rate, X-Samples, X-Elapsed-Seconds, X-Device, X-Device-Name")
+
+
 def _json(handler, status, payload):
     body = json.dumps(payload).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json")
+    _cors(handler)
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
@@ -1077,6 +1162,7 @@ def _serve_file(handler, path: Path, content_type=None):
     data = path.read_bytes()
     handler.send_response(200)
     handler.send_header("Content-Type", content_type or mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+    _cors(handler)
     handler.send_header("Content-Length", str(len(data)))
     handler.end_headers()
     handler.wfile.write(data)
@@ -1563,12 +1649,19 @@ def _process_live_chunk(raw: bytes, sr: int, timbre_values, nb_steps: int, guida
 class Handler(BaseHTTPRequestHandler):
     server_version = "AFTERLocalUI/0.1"
 
+    def do_OPTIONS(self):
+        self.send_response(204)
+        _cors(self)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/":
             body = INDEX_HTML.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            _cors(self)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -1633,6 +1726,7 @@ class Handler(BaseHTTPRequestHandler):
                 body, sample_count, device_info = _process_live_chunk(raw, sr, timbre_values, nb_steps, guidance, input_gain_db, wet_mix, spring_mix, spring_decay, reverb_boost, delay_mix, delay_time_ms, delay_feedback, buffer_size, model_name)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
+                _cors(self)
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("X-Sample-Rate", str(SAMPLE_RATE))
                 self.send_header("X-Samples", str(sample_count))
@@ -1695,7 +1789,8 @@ class Handler(BaseHTTPRequestHandler):
                 **device_info,
             })
         except Exception as exc:
-            _json(self, 500, {"error": str(exc)})
+            traceback.print_exc()
+            _json(self, 500, {"error": str(exc), "type": exc.__class__.__name__})
     def log_message(self, fmt, *args):
         print("%s - %s" % (self.address_string(), fmt % args), flush=True)
 
@@ -1716,33 +1811,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -137,6 +137,59 @@ Allow microphone permission if using `Start Live`. Audio capture happens in the 
 
 Running this model directly on a MacBook is not recommended. Regular MacBooks do not have CUDA, and Apple Silicon MPS may not be compatible with this exported real-time TorchScript path.
 
+## Debugging MacBook `Load failed`
+
+If `Run AFTER` or `Start Live` shows only `Load failed`, the browser did not receive a usable response. In Safari this often hides the real cause, so check these in order:
+
+1. Open the same UI address plus `/health`:
+
+```text
+http://127.0.0.1:6006/health
+```
+
+It should show `"cuda_available": true` and a real NVIDIA device name. If it says CPU, the AutoDL image or PyTorch install is wrong and live inference will likely time out.
+
+2. Prefer an SSH tunnel from the MacBook:
+
+```bash
+ssh -CNg -L 6006:127.0.0.1:6006 root@YOUR_AUTODL_HOST -p YOUR_SSH_PORT
+```
+
+Then open:
+
+```text
+http://127.0.0.1:6006/
+```
+
+Microphone access is reliable on `localhost`. A plain remote `http://...` address may block microphone capture in macOS browsers. HTTPS custom service can also work.
+
+3. Keep the AutoDL service log visible:
+
+```bash
+bash start_autodl.sh 2>&1 | tee after_ui.log
+```
+
+When a backend error happens, the UI now prints a Python traceback in this log and the browser shows the failing API name, such as `Run AFTER`, `Live reset`, or `Live chunk`.
+
+4. For first tests, use conservative settings:
+
+```text
+Buffer Size: 8192
+Live Quality: Fast / nb_steps=1
+Post FX: off
+Input: short WAV file first
+```
+
+MP3/M4A upload can fail if the AutoDL torchaudio build lacks FFmpeg support. Use WAV first when debugging `Run AFTER`.
+
+5. Benchmark the live path on AutoDL:
+
+```bash
+python benchmark_live_autodl.py --steps 1 --buffer-size 8192 --chunks 5
+```
+
+If p95 is above the buffer duration, the browser/proxy may report a network-style failure even though the real problem is slow inference.
+
 ## Health Check
 
 ```bash
