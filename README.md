@@ -74,10 +74,10 @@ cd C:\Users\hanxu\AFTER
 C:\Users\hanxu\miniconda3\envs\after_gpu\python.exe after_local_ui.py --host 127.0.0.1 --port 7860
 ```
 
-Or use the helper script:
+Or use the Windows helper script:
 
 ```powershell
-.\start_local_windows.ps1
+.\start_windows_pc.bat
 ```
 
 Then open:
@@ -92,7 +92,10 @@ Health check:
 Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7860/health
 ```
 
-More detail: [LOCAL_UI_DEPLOY.md](LOCAL_UI_DEPLOY.md)
+More detail:
+
+- [WINDOWS_PC_DEPLOY.md](WINDOWS_PC_DEPLOY.md): setup guide for another Windows PC, including RTX 5090-class machines.
+- [LOCAL_UI_DEPLOY.md](LOCAL_UI_DEPLOY.md): notes for this local development setup.
 
 ## Option 2: AutoDL GPU Deployment
 
